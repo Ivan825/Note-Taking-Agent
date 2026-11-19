@@ -1,0 +1,79 @@
+name: note-taker
+
+x-app-env: &app-env
+  env_file: .env
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: notes
+      POSTGRES_PASSWORD: notes
+      POSTGRES_DB: notes
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notes -d notes"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: notes
+      RABBITMQ_DEFAULT_PASS: notes
+    ports:
+      - "15672:15672"   # management UI (queues, DLQ) for the demo
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  gateway:
+    <<: *app-env
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    image: note-taker/gateway:latest
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    <<: *app-env
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    image: note-taker/worker:latest
+    deploy:
+      replicas: 2          # override with: docker compose up --scale worker=N
+    stop_grace_period: 20s
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      gateway: { condition: service_healthy }   # gateway creates the schema + queues
+
+volumes:
+  pgdata:
+  rabbitdata:

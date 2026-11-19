@@ -1,0 +1,26 @@
+# Secrets & local config
+.env
+*.pem
+secrets.env
+
+# Tooling
+.claude/
+.vscode/
+.idea/
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Local artifacts
+/Note Taking agent.pdf
+*.log
+tmp/
