@@ -7,6 +7,7 @@ failure is classified as RateLimited / TransientError / PermanentError.
 from __future__ import annotations
 
 import logging
+import re
 
 import yt_dlp
 from youtube_transcript_api import (
@@ -51,13 +52,14 @@ def _guard() -> None:
 
 
 def _classify_ytdlp(exc: Exception) -> Exception:
-    msg = str(exc)
+    # yt-dlp messages look like "ERROR: [youtube] <id>: This video is unavailable"
+    msg = re.sub(r"^ERROR:\s*(\[[^\]]+\]\s*)?[\w-]{11}:\s*", "", str(exc)).strip()
     low = msg.lower()
     if "429" in low or "too many requests" in low:
         return RateLimited("youtube")
     if "private video" in low:
         return TransientError("This video is private or unavailable", "VIDEO_UNAVAILABLE")
-    if "video unavailable" in low or "not available" in low or "removed" in low or "does not exist" in low:
+    if "unavailable" in low or "not available" in low or "removed" in low or "does not exist" in low:
         return TransientError("This video is unavailable", "VIDEO_UNAVAILABLE")
     if "confirm your age" in low or "age-restricted" in low:
         return PermanentError("Age-restricted videos are not supported", "VIDEO_AGE_RESTRICTED")
