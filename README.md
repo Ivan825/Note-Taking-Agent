@@ -264,6 +264,7 @@ they happen.
 | 2 of 6 frames forced to fail | `COMPLETED_WITH_WARNINGS`, 4 frames published, 2 `FRAME_EXTRACTION_FAILED` warnings |
 | Every frame forced to fail | `COMPLETED_WITH_WARNINGS`, text-only page published |
 | Unavailable video | Retries at 10 s, 30 s, 90 s, 90 s, then `DEAD_LETTERED` after about 224 s; the message is in `jobs.dlq` |
+| RabbitMQ container force-recreated | The dead-lettered message survived (fixed node name), workers reconnected within about 6 s, and `POST /admin/dlq/{id}/replay` put it back to work |
 | Burst of 5 videos through the extension, 3 workers | All `COMPLETED` on attempt 1 (107–162 s each). **0 Claude 429s**, with the shared token bucket pacing calls |
 | 4h26m video | Blocked in the extension. Without the duration hint, the worker returns `FAILED / VIDEO_TOO_LONG` before doing any work |
 

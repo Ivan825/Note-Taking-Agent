@@ -101,6 +101,11 @@ def main() -> None:
     signal.signal(signal.SIGINT, _graceful)
     try:
         consumer.run()
+    except Exception:
+        # Lost the broker (restart, network). Exit non-zero: the unacked job is redelivered to another
+        # worker, and Docker's restart policy brings this worker back once RabbitMQ is reachable.
+        log.exception("lost connection to the broker; exiting so the worker is restarted")
+        raise SystemExit(1)
     finally:
         try:
             consumer.conn.close()

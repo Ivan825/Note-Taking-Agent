@@ -53,6 +53,11 @@ current stage is allowed because that is how a redelivered job resumes.
 * **No duplicate Notion pages.** The page is created in a single API call. Its title carries a
   `#<job8>` tag and its id is saved right away. Before creating a page, the worker first checks
   for a saved id, then scans the parent for the tag.
+* **Broker restarts.** RabbitMQ runs with a fixed hostname, so its node name and its data directory
+  stay the same across container re-creation, and durable queues keep their persistent messages. A
+  worker that loses its broker connection exits. Its unacked job is redelivered, and Docker's
+  `restart: unless-stopped` brings the worker back once the broker is reachable. A worker you
+  deliberately `docker kill` stays down.
 * **Stale copies are dropped.** The message carries `x-attempt` and the job row stores the current
   attempt. A copy with a lower attempt number is acked and ignored.
 
