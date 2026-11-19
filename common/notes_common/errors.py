@@ -28,12 +28,13 @@ class RateLimited(PipelineError):
 
     API_NAMES = {"llm": "Claude", "notion": "Notion", "youtube": "YouTube"}
 
-    def __init__(self, api: str, retry_after: float | None = None, simulated: bool = False):
+    def __init__(self, api: str, retry_after: float | None = None, simulated: bool = False, throttled: bool = False):
         name = self.API_NAMES.get(api, api)
         super().__init__(f"Rate-limited by {name}", code=f"{api.upper()}_RATE_LIMITED")
         self.api = api
         self.retry_after = retry_after
         self.simulated = simulated
+        self.throttled = throttled  # our own limiter said wait (the API never saw the call): not a failed attempt
 
 
 class TransientError(PipelineError):

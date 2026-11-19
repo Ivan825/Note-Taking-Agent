@@ -98,7 +98,7 @@ def acquire(bucket_name: str, cost: float = 1.0, api: str | None = None, max_wai
                     log.info("rate limiter %s: waited %.1fs", bucket_name, waited)
                 return waited
             if waited + wait > max_wait:
-                raise RateLimited(api or bucket_name.split("_")[0], retry_after=wait)
+                raise RateLimited(api or bucket_name.split("_")[0], retry_after=wait, throttled=True)
             sleep_for = min(wait, 2.0)
             time.sleep(sleep_for)
             waited += sleep_for

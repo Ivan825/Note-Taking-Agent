@@ -34,6 +34,7 @@ class Consumer:
         self.ch.basic_qos(prefetch_count=1)
         self.ch.basic_consume(broker.WORK_QUEUE, self.on_message, auto_ack=False)
         self._busy = threading.Event()
+        self.failed = False
 
     # broker thread -------------------------------------------------------------------
     def on_message(self, ch, method, props, body):
@@ -57,7 +58,11 @@ class Consumer:
             self.ch.basic_ack(tag)
         except Exception:
             # Without the ack the broker will redeliver; the job resumes from its checkpoint.
-            log.exception("could not finalize delivery %s; leaving it unacked", tag)
+            # e.g. Postgres is down. An unacked message is only redelivered when the connection closes, so
+            # stop consuming and exit (see main): the broker requeues it and Docker restarts this worker.
+            log.exception("could not finalize delivery %s; exiting so the broker redelivers it", tag)
+            self.failed = True
+            self.ch.stop_consuming()
         finally:
             self._busy.clear()
 
@@ -111,6 +116,8 @@ def main() -> None:
             consumer.conn.close()
         except Exception:
             pass
+    if consumer.failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

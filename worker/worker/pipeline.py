@@ -38,6 +38,7 @@ class Outcome:
     delay: int = 0
     next_attempt: int = 0
     error: dict = field(default_factory=dict)
+    throttled: bool = False  # re-queued only to wait for our shared rate-limit budget
 
 
 def _enter(job_id: uuid.UUID, stage: Status, current: Status) -> Status:
@@ -141,6 +142,14 @@ def _fail(job_id: uuid.UUID, status: Status, error: dict, detail: str) -> None:
 
 def _retry_or_dead(job_id: uuid.UUID, stage: Status, attempt: int, exc: PipelineError) -> Outcome:
     s = get_settings()
+    if isinstance(exc, RateLimited) and exc.throttled:
+        # Waiting for our shared rate-limit budget is not a failure: re-queue without using up an attempt,
+        # otherwise a big burst would dead-letter perfectly healthy jobs.
+        delay = broker.pick_delay(exc.retry_after or 1)
+        log.info("job %s: shared %s budget is busy at %s - re-queued in %ss (attempt %s kept)",
+                 job_id, exc.api, stage.value, delay, attempt)
+        return Outcome("retry", exc.message, delay=delay, next_attempt=attempt, error=exc.to_dict(),
+                       throttled=True)
     next_attempt = attempt + 1
     if next_attempt > s.max_attempts:
         log.warning("job %s: retry budget exhausted after %s attempts (%s)", job_id, attempt, exc.message)
@@ -158,11 +167,14 @@ def _retry_or_dead(job_id: uuid.UUID, stage: Status, attempt: int, exc: Pipeline
 # ------------------------------------------------------------------ called after the broker confirmed
 def record_retry(job_id: uuid.UUID, outcome: Outcome) -> None:
     s = get_settings()
+    detail = (f"{outcome.reason} - retrying in {outcome.delay}s (attempt {outcome.next_attempt} of {s.max_attempts})")
+    if outcome.throttled:
+        api = outcome.error["code"].split("_")[0].title()
+        detail = f"Waiting for the shared {api} rate limit - retrying in {outcome.delay}s"
     jobstore.update_job(
         job_id,
         attempt=outcome.next_attempt,
-        status_detail=(f"{outcome.reason} - retrying in {outcome.delay}s "
-                       f"(attempt {outcome.next_attempt} of {s.max_attempts})"),
+        status_detail=detail,
         next_retry_at=datetime.now(timezone.utc) + timedelta(seconds=outcome.delay),
     )
 

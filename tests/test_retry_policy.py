@@ -38,3 +38,15 @@ def test_budget_exhaustion_dead_letters():
     assert out.kind == "dead"
     assert out.error["code"] == "VIDEO_UNAVAILABLE"
     assert out.error["attempts"] == 5
+
+
+def test_limiter_wait_does_not_consume_an_attempt():
+    # our own shared limiter said "wait": even on the last attempt it is re-queued, never dead-lettered
+    exc = RateLimited("llm", retry_after=25, throttled=True)
+    out = _retry_or_dead(uuid.uuid4(), Status.SUMMARIZING, attempt=5, exc=exc)
+    assert out.kind == "retry" and out.next_attempt == 5 and out.throttled and out.delay == 30
+
+
+def test_real_429_on_last_attempt_still_dead_letters():
+    out = _retry_or_dead(uuid.uuid4(), Status.SUMMARIZING, attempt=5, exc=RateLimited("llm"))
+    assert out.kind == "dead"

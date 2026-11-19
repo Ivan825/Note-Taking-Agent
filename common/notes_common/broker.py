@@ -38,24 +38,28 @@ def delay_queue_name(seconds: int) -> str:
     return f"jobs.delay.{int(seconds)}s"
 
 
-def connection_params(heartbeat: int = 30) -> pika.URLParameters:
+def connection_params(heartbeat: int = 30, fast: bool = False) -> pika.URLParameters:
     params = pika.URLParameters(get_settings().rabbitmq_url)
     params.heartbeat = heartbeat
     params.blocked_connection_timeout = 60
-    params.connection_attempts = 3
+    params.connection_attempts = 1 if fast else 3   # fast = request path: give up quickly instead of retrying
     params.retry_delay = 2
+    if fast:
+        params.socket_timeout = 3
+        params.stack_timeout = 3
     return params
 
 
-def connect(heartbeat: int = 30, retries: int = 30) -> pika.BlockingConnection:
+def connect(heartbeat: int = 30, retries: int = 30, fast: bool = False) -> pika.BlockingConnection:
     last: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
-            return pika.BlockingConnection(connection_params(heartbeat))
+            return pika.BlockingConnection(connection_params(heartbeat, fast))
         except Exception as exc:  # pragma: no cover - startup race
             last = exc
             log.warning("rabbitmq not ready (%s/%s): %s", attempt, retries, exc)
-            time.sleep(1)
+            if not fast:
+                time.sleep(1)
     raise RuntimeError(f"rabbitmq unavailable: {last}")
 
 
@@ -119,10 +123,17 @@ class Publisher:
         self._lock = threading.Lock()
         self._conn: pika.BlockingConnection | None = None
         self._ch: BlockingChannel | None = None
+        self._down_until = 0.0
 
     def _ensure(self) -> BlockingChannel:
         if self._conn is None or self._conn.is_closed or self._ch is None or self._ch.is_closed:
-            self._conn = connect(heartbeat=0, retries=3)
+            if time.monotonic() < self._down_until:  # broker just failed: answer instantly, don't queue behind the lock
+                raise RuntimeError("rabbitmq unavailable")
+            try:
+                self._conn = connect(heartbeat=0, retries=1, fast=True)
+            except Exception:
+                self._down_until = time.monotonic() + 2
+                raise
             self._ch = self._conn.channel()
             self._ch.confirm_delivery()
             declare_topology(self._ch)
