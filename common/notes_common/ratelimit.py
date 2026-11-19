@@ -22,6 +22,8 @@ from .redis_client import get_redis
 
 log = logging.getLogger(__name__)
 
+WAIT_KEY_PREFIX = "metrics:ratelimit_wait:"
+
 # KEYS[1] = bucket key
 # ARGV    = capacity, refill_per_second, cost
 # returns = seconds to wait (0 when the tokens were taken)
@@ -88,14 +90,18 @@ def acquire(bucket_name: str, cost: float = 1.0, api: str | None = None, max_wai
     """
     bucket = buckets()[bucket_name]
     waited = 0.0
-    while True:
-        wait = _take(bucket, cost)
-        if wait <= 0:
-            if waited > 0.5:
-                log.info("rate limiter %s: waited %.1fs", bucket_name, waited)
-            return waited
-        if waited + wait > max_wait:
-            raise RateLimited(api or bucket_name.split("_")[0], retry_after=wait)
-        sleep_for = min(wait, 2.0)
-        time.sleep(sleep_for)
-        waited += sleep_for
+    try:
+        while True:
+            wait = _take(bucket, cost)
+            if wait <= 0:
+                if waited > 0.5:
+                    log.info("rate limiter %s: waited %.1fs", bucket_name, waited)
+                return waited
+            if waited + wait > max_wait:
+                raise RateLimited(api or bucket_name.split("_")[0], retry_after=wait)
+            sleep_for = min(wait, 2.0)
+            time.sleep(sleep_for)
+            waited += sleep_for
+    finally:
+        if waited > 0:  # exported by the gateway as ratelimit_wait_seconds_total{bucket}
+            get_redis().incrbyfloat(f"{WAIT_KEY_PREFIX}{bucket_name}", waited)

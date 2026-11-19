@@ -28,7 +28,10 @@ def test_single_chunk_when_small():
 
 def test_merge_keeps_part_order():
     parts = [
-        {"sections": [{"heading": "B", "start_sec": 50}, {"heading": "A", "start_sec": 10}], "key_frames": [{"timestamp_sec": 20}]},
+        {
+            "sections": [{"heading": "B", "start_sec": 50}, {"heading": "A", "start_sec": 10}],
+            "key_frames": [{"timestamp_sec": 20}],
+        },
         {"sections": [{"heading": "C", "start_sec": 300}], "key_frames": [{"timestamp_sec": 320}]},
     ]
     merged = merge_chunks(parts)

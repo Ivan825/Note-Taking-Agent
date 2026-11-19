@@ -42,7 +42,8 @@ def test_falls_back_to_speech_to_text(job_id, monkeypatch):
 
 def test_captions_used_when_available(job_id, monkeypatch):
     monkeypatch.setattr(transcribe.youtube, "fetch_metadata", lambda v: META)
-    monkeypatch.setattr(transcribe.youtube, "fetch_transcript", lambda v: ([{"start": 1, "duration": 2, "text": "cc"}], "en"))
+    captions = [{"start": 1, "duration": 2, "text": "cc"}]
+    monkeypatch.setattr(transcribe.youtube, "fetch_transcript", lambda v: (captions, "en"))
     monkeypatch.setattr(transcribe, "_speech_to_text", lambda *a: pytest.fail("ASR should not run"))
 
     transcribe.run(job_id, "C0DPdy98e4c")

@@ -18,7 +18,7 @@ import json
 import logging
 import threading
 import time
-from typing import Iterable
+from typing import Callable, Iterable
 
 import pika
 from pika.adapters.blocking_connection import BlockingChannel
@@ -149,6 +149,43 @@ class Publisher:
                 "consumers": work.method.consumer_count,
                 "dead_lettered": dlq.method.message_count,
             }
+
+    def queue_depths(self) -> dict[str, int]:
+        """Ready-message count of jobs.work, every delay queue and jobs.dlq."""
+        names = [WORK_QUEUE, *(delay_queue_name(d) for d in sorted(set(get_settings().backoff_seconds))), DLQ_QUEUE]
+        with self._lock:
+            ch = self._ensure()
+            return {n: ch.queue_declare(n, passive=True).method.message_count for n in names}
+
+    def replay_from_dlq(self, job_id: str, before_publish: Callable[[], None]) -> bool:
+        """Move the DLQ message for `job_id` back onto jobs.work (as attempt 1).
+
+        Browsed messages stay unacked until the end, so `basic_get` walks the queue once and
+        everything we don't take is requeued in place. `before_publish` runs (e.g. resetting the
+        job row) only once the message is found; if it or the publish raises, nothing is acked.
+        Returns False if no DLQ message matches.
+        """
+        with self._lock:
+            ch = self._ensure()
+            held = False
+            try:
+                while True:
+                    method, _props, body = ch.basic_get(DLQ_QUEUE, auto_ack=False)
+                    if method is None:
+                        return False
+                    held = True
+                    try:
+                        message = json.loads(body)
+                    except ValueError:
+                        continue
+                    if message.get("job_id") == job_id:
+                        before_publish()
+                        publish_work(ch, message, attempt=1)
+                        ch.basic_ack(method.delivery_tag)
+                        return True
+            finally:
+                if held and ch.is_open:
+                    ch.basic_nack(delivery_tag=0, multiple=True, requeue=True)
 
     def close(self) -> None:
         try:

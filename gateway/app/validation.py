@@ -6,7 +6,10 @@ import re
 from urllib.parse import parse_qs, urlparse
 
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com"}
+YOUTUBE_HOSTS = {
+    "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+    "youtube-nocookie.com", "www.youtube-nocookie.com",
+}
 SHORT_HOSTS = {"youtu.be", "www.youtu.be"}
 
 

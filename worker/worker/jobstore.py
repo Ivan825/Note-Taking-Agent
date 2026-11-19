@@ -28,7 +28,9 @@ def update_job(job_id: uuid.UUID, **fields: Any) -> None:
         job.updated_at = utcnow()
 
 
-def transition(job_id: uuid.UUID, new: Status, detail: str | None = None, progress: int | None = None, **fields: Any) -> None:
+def transition(
+    job_id: uuid.UUID, new: Status, detail: str | None = None, progress: int | None = None, **fields: Any
+) -> None:
     """Move the job to `new`, enforcing the state machine (spec section 4)."""
     with session_scope() as db:
         job = db.get(Job, job_id, with_for_update=True)
@@ -57,6 +59,17 @@ def set_progress(job_id: uuid.UUID, progress: int, detail: str | None = None) ->
         if detail is not None:
             job.status_detail = detail
         job.updated_at = utcnow()
+
+
+def mark_stage(job_id: uuid.UUID, stage: Status, key: str) -> None:
+    """Record `key` (started_at | finished_at) for a stage once; redelivered/resumed runs keep the first value."""
+    with session_scope() as db:
+        job = db.get(Job, job_id, with_for_update=True)
+        if job is None:
+            return
+        timings = {k: dict(v) for k, v in (job.stage_timings or {}).items()}
+        timings.setdefault(stage.value, {}).setdefault(key, utcnow().isoformat())
+        job.stage_timings = timings
 
 
 def add_warning(job_id: uuid.UUID, warning: dict) -> None:

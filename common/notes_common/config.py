@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # Security / demo
     token_enc_key: str = ""
     enable_debug_endpoints: bool = False
+    admin_token: str = ""  # empty = /admin is not mounted
     log_level: str = "INFO"
 
     @field_validator("backoff_seconds", mode="before")

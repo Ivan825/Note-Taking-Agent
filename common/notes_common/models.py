@@ -41,6 +41,8 @@ class Job(Base):
     warnings: Mapped[list] = mapped_column(JSON, default=list)
     error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # {"TRANSCRIBING": {"started_at": iso, "finished_at": iso}, ...} - first entry / completion per stage
+    stage_timings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     notion_parent_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     notion_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

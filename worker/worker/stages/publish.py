@@ -41,7 +41,8 @@ def run(job_id: uuid.UUID, video_id: str, notion_token: str, parent_id: str | No
                 parent_id = client.ensure_default_page(s.default_notion_page_title)
                 if not parent_id:
                     raise PermanentError(
-                        "No Notion page is shared with the Video Note Taker connection - reconnect Notion and pick a page",
+                        "No Notion page is shared with the Video Note Taker connection"
+                        " - reconnect Notion and pick a page",
                         "NOTION_NO_DESTINATION",
                     )
                 jobstore.update_job(job_id, notion_parent_id=parent_id)

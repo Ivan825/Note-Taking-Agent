@@ -11,7 +11,9 @@ MAX_BLOCKS = 100  # Notion's per-request children limit
 MAX_TEXT = 1900   # Notion limit is 2000 chars per text object
 
 
-def _text(content: str, link: str | None = None, bold: bool = False, italic: bool = False, color: str = "default") -> dict:
+def _text(
+    content: str, link: str | None = None, bold: bool = False, italic: bool = False, color: str = "default"
+) -> dict:
     t: dict = {"type": "text", "text": {"content": content[:MAX_TEXT]}}
     if link:
         t["text"]["link"] = {"url": link}
@@ -102,15 +104,18 @@ def build_children(*, meta: dict, synthesis: dict, frames: list[dict], video_url
     for i, sec in enumerate(sections):
         next_start = sections[i + 1]["start_sec"] if i + 1 < len(sections) else float("inf")
         start = sec.get("start_sec", 0)
-        blocks.append(heading(3, _text(f"[{mmss(start)}] ", link=f"{video_url}&t={int(start)}s"), _text(sec["heading"])))
+        stamp = _text(f"[{mmss(start)}] ", link=f"{video_url}&t={int(start)}s")
+        blocks.append(heading(3, stamp, _text(sec["heading"])))
         blocks += [bullet(b) for b in sec.get("bullets", [])[:per_section_cap]]
         while pending_frames and pending_frames[0]["timestamp_sec"] < next_start:
             f = pending_frames.pop(0)
-            blocks.append(image(f["upload_id"], frame_caption(f["timestamp_sec"], f["caption"], f["reason"], video_url)))
+            caption = frame_caption(f["timestamp_sec"], f["caption"], f["reason"], video_url)
+            blocks.append(image(f["upload_id"], caption))
     if pending_frames:  # frames with no section (e.g. no sections returned)
         blocks.append(heading(2, _text("Key frames")))
         for f in pending_frames:
-            blocks.append(image(f["upload_id"], frame_caption(f["timestamp_sec"], f["caption"], f["reason"], video_url)))
+            caption = frame_caption(f["timestamp_sec"], f["caption"], f["reason"], video_url)
+            blocks.append(image(f["upload_id"], caption))
 
     missing = frames_requested - len(frames)
     if missing > 0:

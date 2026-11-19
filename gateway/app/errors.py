@@ -9,18 +9,21 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, code: str, message: str, extra: dict | None = None):
+    def __init__(self, status: int, code: str, message: str, extra: dict | None = None,
+                 headers: dict | None = None):
         self.status = status
         self.code = code
         self.message = message
         self.extra = extra or {}
+        self.headers = headers
 
 
-def error_response(status: int, code: str, message: str, extra: dict | None = None) -> JSONResponse:
+def error_response(status: int, code: str, message: str, extra: dict | None = None,
+                   headers: dict | None = None) -> JSONResponse:
     body = {"error": {"code": code, "message": message}}
     if extra:
         body.update(extra)
-    return JSONResponse(status_code=status, content=body)
+    return JSONResponse(status_code=status, content=body, headers=headers)
 
 
 _DEFAULT_CODES = {400: "BAD_REQUEST", 404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED", 409: "CONFLICT"}
@@ -29,7 +32,7 @@ _DEFAULT_CODES = {400: "BAD_REQUEST", 404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED
 def install(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError):
-        return error_response(exc.status, exc.code, exc.message, exc.extra)
+        return error_response(exc.status, exc.code, exc.message, exc.extra, exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError):

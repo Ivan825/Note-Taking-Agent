@@ -13,7 +13,7 @@ from notes_common.config import get_settings
 from notes_common.logging_setup import setup_logging
 
 from . import errors
-from .routes import debug, health, jobs, oauth
+from .routes import admin, debug, health, jobs, metrics, notion, oauth
 
 
 def create_app(publisher=None, init_infra: bool = True) -> FastAPI:
@@ -48,8 +48,12 @@ def create_app(publisher=None, init_infra: bool = True) -> FastAPI:
     app.include_router(health.router)
     app.include_router(jobs.router)
     app.include_router(oauth.router)
+    app.include_router(notion.router)
+    app.include_router(metrics.router)
     if settings.enable_debug_endpoints:
         app.include_router(debug.router)
+    if settings.admin_token:
+        app.include_router(admin.router)
 
     @app.get("/", include_in_schema=False)
     def root():

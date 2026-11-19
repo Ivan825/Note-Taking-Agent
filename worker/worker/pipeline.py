@@ -41,6 +41,7 @@ class Outcome:
 
 
 def _enter(job_id: uuid.UUID, stage: Status, current: Status) -> Status:
+    jobstore.mark_stage(job_id, stage, "started_at")
     if stage_index(current) > stage_index(stage):
         return current
     if current != stage:
@@ -51,7 +52,6 @@ def _enter(job_id: uuid.UUID, stage: Status, current: Status) -> Status:
 
 
 def run(message: dict, attempt: int, redelivered: bool) -> Outcome:
-    s = get_settings()
     try:
         job_id = uuid.UUID(message["job_id"])
     except (KeyError, ValueError, TypeError):
@@ -86,18 +86,22 @@ def run(message: dict, attempt: int, redelivered: bool) -> Outcome:
         current = _enter(job_id, Status.TRANSCRIBING, current)
         stage = Status.TRANSCRIBING
         transcribe.run(job_id, video_id)
+        jobstore.mark_stage(job_id, Status.TRANSCRIBING, "finished_at")
 
         current = _enter(job_id, Status.SUMMARIZING, current)
         stage = Status.SUMMARIZING
         synthesis = synthesize.run(job_id)
+        jobstore.mark_stage(job_id, Status.SUMMARIZING, "finished_at")
 
         current = _enter(job_id, Status.EXTRACTING_FRAMES, current)
         stage = Status.EXTRACTING_FRAMES
         frames.run(job_id, video_id, synthesis)
+        jobstore.mark_stage(job_id, Status.EXTRACTING_FRAMES, "finished_at")
 
         current = _enter(job_id, Status.PUBLISHING, current)
         stage = Status.PUBLISHING
         result = publish.run(job_id, video_id, token, message.get("notion_parent_id") or job.notion_parent_id)
+        jobstore.mark_stage(job_id, Status.PUBLISHING, "finished_at")
 
         final = (
             Status.COMPLETED
@@ -146,7 +150,8 @@ def _retry_or_dead(job_id: uuid.UUID, stage: Status, attempt: int, exc: Pipeline
     if isinstance(exc, RateLimited) and exc.retry_after:
         delay = max(delay, int(exc.retry_after + 0.999))
     delay = broker.pick_delay(delay)
-    log.info("job %s: %s at %s - retry %s/%s in %ss", job_id, exc.message, stage.value, next_attempt, s.max_attempts, delay)
+    log.info("job %s: %s at %s - retry %s/%s in %ss",
+             job_id, exc.message, stage.value, next_attempt, s.max_attempts, delay)
     return Outcome("retry", exc.message, delay=delay, next_attempt=next_attempt, error=exc.to_dict())
 
 
@@ -156,7 +161,8 @@ def record_retry(job_id: uuid.UUID, outcome: Outcome) -> None:
     jobstore.update_job(
         job_id,
         attempt=outcome.next_attempt,
-        status_detail=f"{outcome.reason} - retrying in {outcome.delay}s (attempt {outcome.next_attempt} of {s.max_attempts})",
+        status_detail=(f"{outcome.reason} - retrying in {outcome.delay}s "
+                       f"(attempt {outcome.next_attempt} of {s.max_attempts})"),
         next_retry_at=datetime.now(timezone.utc) + timedelta(seconds=outcome.delay),
     )
 

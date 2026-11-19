@@ -19,6 +19,7 @@ os.environ.setdefault("TOKEN_ENC_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("BACKOFF_SECONDS", "10,30,90,90")
 os.environ.setdefault("MAX_ATTEMPTS", "5")
 os.environ.setdefault("ENABLE_DEBUG_ENDPOINTS", "false")
+os.environ.setdefault("ADMIN_TOKEN", "test-admin-token")
 
 import pytest  # noqa: E402
 
@@ -26,6 +27,7 @@ import pytest  # noqa: E402
 class FakePublisher:
     def __init__(self) -> None:
         self.published: list[dict] = []
+        self.dlq: list[dict] = []
         self.fail = False
 
     def publish_job(self, body: dict) -> None:
@@ -34,7 +36,19 @@ class FakePublisher:
         self.published.append(body)
 
     def queue_stats(self) -> dict:
-        return {"work_ready": len(self.published), "consumers": 0, "dead_lettered": 0}
+        return {"work_ready": len(self.published), "consumers": 0, "dead_lettered": len(self.dlq)}
+
+    def queue_depths(self) -> dict:
+        return {"jobs.work": len(self.published), "jobs.dlq": len(self.dlq)}
+
+    def replay_from_dlq(self, job_id: str, before_publish) -> bool:
+        msg = next((m for m in self.dlq if m.get("job_id") == job_id), None)
+        if msg is None:
+            return False
+        before_publish()
+        self.dlq.remove(msg)
+        self.published.append(msg)
+        return True
 
     def close(self) -> None:
         pass

@@ -163,7 +163,11 @@ def fetch_transcript(video_id: str) -> tuple[list[dict], str]:
         raise TransientError(f"Could not retrieve the transcript: {exc}", "TRANSCRIPT_FETCH_FAILED") from exc
 
     segments = [
-        {"start": round(float(s.start), 2), "duration": round(float(s.duration), 2), "text": s.text.replace("\n", " ").strip()}
+        {
+            "start": round(float(s.start), 2),
+            "duration": round(float(s.duration), 2),
+            "text": s.text.replace("\n", " ").strip(),
+        }
         for s in fetched
         if s.text and s.text.strip()
     ]

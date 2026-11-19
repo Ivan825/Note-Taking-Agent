@@ -24,7 +24,8 @@ def images(blocks):
 
 
 def test_every_frame_has_caption_and_reason():
-    blocks = build_children(meta=META, synthesis=synthesis(), frames=frames([30, 250, 900]), video_url=URL, frames_requested=3)
+    blocks = build_children(meta=META, synthesis=synthesis(), frames=frames([30, 250, 900]), video_url=URL,
+                            frames_requested=3)
     imgs = images(blocks)
     assert len(imgs) == 3
     for img in imgs:
@@ -43,7 +44,10 @@ def test_frames_interleaved_under_matching_section():
 def test_missing_frames_produce_notice_but_no_substitute_image():
     blocks = build_children(meta=META, synthesis=synthesis(), frames=frames([30]), video_url=URL, frames_requested=3)
     assert len(images(blocks)) == 1
-    assert any(b["type"] == "callout" and "could not be captured" in b["callout"]["rich_text"][0]["text"]["content"] for b in blocks)
+    assert any(
+        b["type"] == "callout" and "could not be captured" in b["callout"]["rich_text"][0]["text"]["content"]
+        for b in blocks
+    )
 
 
 def test_text_only_page_when_all_frames_fail():

@@ -49,7 +49,11 @@ def init_db(retries: int = 30) -> None:
     """Create tables (idempotent). Retries while Postgres is still starting."""
     for attempt in range(1, retries + 1):
         try:
-            Base.metadata.create_all(get_engine())
+            engine = get_engine()
+            Base.metadata.create_all(engine)
+            if engine.dialect.name == "postgresql":  # create_all never alters an existing table
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS stage_timings JSON"))
             return
         except Exception as exc:  # pragma: no cover - startup race
             log.warning("database not ready (%s/%s): %s", attempt, retries, exc)

@@ -23,7 +23,9 @@ NOTION_VERSION = "2026-03-11"
 def normalize_id(value: str) -> str:
     """Accept a raw id, a dashed uuid, or a full notion.so URL and return a dashed uuid."""
     value = (value or "").strip()
-    m = re.findall(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value)
+    m = re.findall(
+        r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", value
+    )
     if not m:
         raise PermanentError(f"'{value}' is not a valid Notion page or database id", "INVALID_NOTION_PARENT")
     raw = m[-1].replace("-", "").lower()
@@ -43,7 +45,9 @@ class NotionClient:
         self._http.close()
 
     # ------------------------------------------------------------------ core
-    def request(self, method: str, path: str, *, json: Any = None, files: Any = None, ok_404: bool = False) -> dict | None:
+    def request(
+        self, method: str, path: str, *, json: Any = None, files: Any = None, ok_404: bool = False
+    ) -> dict | None:
         chaos.maybe_429("notion")
         ratelimit.acquire("notion", 1, api="notion")
         try:
@@ -68,7 +72,9 @@ class NotionClient:
         if resp.status_code in (500, 502, 503, 504) or code in ("conflict_error", "service_unavailable"):
             raise TransientError(f"Notion temporarily unavailable ({resp.status_code}): {msg}", "NOTION_UNAVAILABLE")
         if resp.status_code == 401:
-            raise PermanentError("Notion rejected the access token - reconnect Notion in the extension", "NOTION_UNAUTHORIZED")
+            raise PermanentError(
+                "Notion rejected the access token - reconnect Notion in the extension", "NOTION_UNAUTHORIZED"
+            )
         if resp.status_code in (403, 404):
             raise PermanentError(
                 "The Notion page was not found or is not shared with the Video Note Taker connection",
@@ -105,7 +111,9 @@ class NotionClient:
         upload_id = created["id"]  # type: ignore[index]
         sent = self.request("POST", f"/file_uploads/{upload_id}/send", files={"file": (filename, data, content_type)})
         if (sent or {}).get("status") != "uploaded":
-            raise TransientError(f"Notion upload did not complete (status={sent and sent.get('status')})", "NOTION_UPLOAD_FAILED")
+            raise TransientError(
+                f"Notion upload did not complete (status={sent and sent.get('status')})", "NOTION_UPLOAD_FAILED"
+            )
         return upload_id
 
     # ------------------------------------------------------------------ parents
@@ -206,7 +214,8 @@ def _page_title(page: dict) -> str:
 
 
 def _paragraph(text: str) -> dict:
-    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": text}}]}}
+    rich_text = [{"type": "text", "text": {"content": text}}]
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rich_text}}
 
 
 def exchange_oauth_code(code: str, redirect_uri: str | None) -> dict:

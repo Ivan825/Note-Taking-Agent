@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -79,6 +80,12 @@ def submit_job(payload: SubmitJob, request: Request):
             f"(this one is {int(payload.duration_sec // 60)}m {int(payload.duration_sec % 60)}s)",
         )
 
+    return _enqueue(request, video_id, token, payload.notion_parent_id, payload.video_title, payload.duration_sec)
+
+
+def _enqueue(request: Request, video_id: str, token: str, parent_id: str | None,
+             title: str | None, duration: float | None) -> JSONResponse:
+    """Create a QUEUED job and publish its work message; returns the POST /jobs 202 response."""
     job = Job(
         id=uuid.uuid4(),
         video_id=video_id,
@@ -86,9 +93,9 @@ def submit_job(payload: SubmitJob, request: Request):
         status=Status.QUEUED.value,
         status_detail="Waiting for a free worker",
         progress=PROGRESS[Status.QUEUED],
-        video_title=payload.video_title,
-        duration_sec=payload.duration_sec,
-        notion_parent_id=(payload.notion_parent_id or None),
+        video_title=title,
+        duration_sec=duration,
+        notion_parent_id=(parent_id or None),
         attempt=1,
         warnings=[],
     )
@@ -149,3 +156,46 @@ def get_results(job_id: str):
             "warnings": job.warnings or [],
             "error": job.error,
         }
+
+
+class RetryJob(BaseModel):
+    notion_token: str = Field(..., description="Notion token (the gateway never stores it)")
+    notion_parent_id: str | None = Field(None, description="Defaults to the original job's destination")
+
+
+@router.post("/jobs/{job_id}/retry", status_code=202)
+def retry_job(job_id: str, payload: RetryJob, request: Request):
+    """Start a NEW job for the same video. The failed job is left untouched."""
+    jid = _parse_job_id(job_id)
+    with session_scope() as db:
+        old = db.get(Job, jid)
+        if old is None:
+            raise ApiError(404, "JOB_NOT_FOUND", f"No job with id '{job_id}'")
+        if old.status not in (Status.FAILED.value, Status.DEAD_LETTERED.value):
+            raise ApiError(409, "JOB_NOT_RETRYABLE",
+                           f"Job is {old.status}; only FAILED or DEAD_LETTERED jobs can be retried")
+        video_id, title, duration, parent = old.video_id, old.video_title, old.duration_sec, old.notion_parent_id
+    token = payload.notion_token.strip()
+    if not token:
+        raise ApiError(400, "MISSING_NOTION_TOKEN", "notion_token is required - connect Notion in the extension first")
+    return _enqueue(request, video_id, token, payload.notion_parent_id or parent, title, duration)
+
+
+@router.delete("/jobs/{job_id}")
+def cancel_job(job_id: str):
+    """Cancel a job no worker has claimed yet. The worker drops the message because the job is terminal."""
+    jid = _parse_job_id(job_id)
+    with session_scope() as db:
+        job = db.get(Job, jid, with_for_update=True)
+        if job is None:
+            raise ApiError(404, "JOB_NOT_FOUND", f"No job with id '{job_id}'")
+        if Status(job.status) in TERMINAL:
+            raise ApiError(409, "JOB_ALREADY_FINISHED", f"Job already ended as {job.status}; nothing to cancel")
+        if job.status != Status.QUEUED.value:
+            raise ApiError(409, "JOB_ALREADY_STARTED", f"Job is {job.status}; only QUEUED jobs can be cancelled")
+        job.status = Status.FAILED.value
+        job.status_detail = "Cancelled"
+        job.progress = PROGRESS[Status.FAILED]
+        job.error = {"code": "CANCELLED", "message": "Cancelled before a worker picked it up"}
+        job.finished_at = datetime.now(timezone.utc)
+        return serialize(job)

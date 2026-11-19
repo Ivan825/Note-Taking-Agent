@@ -100,7 +100,9 @@ def run(job_id: uuid.UUID) -> dict:
         kind = f"chunk:{i}"
         part = jobstore.get_artifact(job_id, kind)
         if part is None:
-            label = f"Writing notes with Claude (part {i + 1} of {len(chunks)})" if len(chunks) > 1 else "Writing notes with Claude"
+            label = "Writing notes with Claude"
+            if len(chunks) > 1:
+                label += f" (part {i + 1} of {len(chunks)})"
             jobstore.set_progress(job_id, 30 + int(15 * i / max(1, len(chunks))), label)
             start = chunk[0][0]
             end = chunks[i + 1][0][0] if i + 1 < len(chunks) else duration

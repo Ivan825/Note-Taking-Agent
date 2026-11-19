@@ -50,13 +50,16 @@ def load_audio(path: str) -> "np.ndarray":
     try:
         proc = subprocess.run(cmd, capture_output=True, timeout=600, check=True)
     except subprocess.CalledProcessError as exc:
-        raise TransientError(f"Could not decode the audio: {exc.stderr.decode(errors='ignore')[-200:]}", "ASR_FAILED") from exc
+        detail = exc.stderr.decode(errors="ignore")[-200:]
+        raise TransientError(f"Could not decode the audio: {detail}", "ASR_FAILED") from exc
     except subprocess.TimeoutExpired as exc:
         raise TransientError("Decoding the audio timed out", "ASR_FAILED") from exc
     return np.frombuffer(proc.stdout, np.int16).astype(np.float32) / 32768.0
 
 
-def transcribe_file(path: str, duration: float, on_progress: Callable[[float], None] | None = None) -> tuple[list[dict], str]:
+def transcribe_file(
+    path: str, duration: float, on_progress: Callable[[float], None] | None = None
+) -> tuple[list[dict], str]:
     audio = load_audio(path)
     if audio.size < SAMPLE_RATE // 2:
         raise PermanentError("This video has no captions and no recognizable speech", "NO_SPEECH")

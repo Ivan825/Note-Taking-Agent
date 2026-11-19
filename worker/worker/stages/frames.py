@@ -135,7 +135,8 @@ def run(job_id: uuid.UUID, video_id: str, synthesis: dict) -> None:
     duration = float(meta.get("duration_sec") or 0)
     segments = (jobstore.get_artifact(job_id, "transcript") or {}).get("segments", [])
 
-    todo = [f for f in frames if f.status == "pending" or (f.status == "ok" and not f.vision_checked and get_settings().frame_vision_check)]
+    vision = get_settings().frame_vision_check
+    todo = [f for f in frames if f.status == "pending" or (f.status == "ok" and not f.vision_checked and vision)]
     total = len(frames)
     done = total - len(todo)
     jobstore.set_progress(job_id, 50 + int(30 * done / total), f"Capturing frames ({done} of {total})")
