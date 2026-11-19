@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Video Note Taker — Settings</title>
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    body { width: auto; max-width: 560px; max-height: none; margin: 32px auto; padding: 0 16px; display: block; }
+    .card { border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-top: 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+    .row { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    #status { font-size: 12.5px; }
+  </style>
+</head>
+<body>
+  <header style="display:flex;gap:10px;align-items:center">
+    <img src="icons/icon48.png" alt="" width="36" height="36" style="border-radius:8px" />
+    <h1 style="font-size:18px">Video Note Taker — Settings</h1>
+  </header>
+
+  <section class="card">
+    <label for="gateway">Server URL</label>
+    <input id="gateway" type="url" placeholder="http://localhost:8000" />
+    <p class="hint">Base URL of the note-taking API gateway (see the project README).</p>
+    <div class="row">
+      <button id="save" class="btn primary" type="button">Save</button>
+      <button id="test" class="btn secondary" type="button">Test connection</button>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <label>Notion</label>
+    <p id="notion" class="hint">Checking…</p>
+  </section>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

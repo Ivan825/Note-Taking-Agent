@@ -115,7 +115,7 @@ def run(message: dict, attempt: int, redelivered: bool) -> Outcome:
 
     except PermanentError as exc:
         log.warning("job %s failed permanently at %s: %s", job_id, stage.value, exc.message)
-        _fail(job_id, Status.FAILED, exc.to_dict(), exc.message)
+        _fail(job_id, Status.FAILED, {**exc.to_dict(), "stage": stage.value}, exc.message)
         return Outcome("ack", "failed")
     except (RateLimited, TransientError) as exc:
         return _retry_or_dead(job_id, stage, attempt, exc)
@@ -140,7 +140,7 @@ def _retry_or_dead(job_id: uuid.UUID, stage: Status, attempt: int, exc: Pipeline
     next_attempt = attempt + 1
     if next_attempt > s.max_attempts:
         log.warning("job %s: retry budget exhausted after %s attempts (%s)", job_id, attempt, exc.message)
-        error = {**exc.to_dict(), "attempts": attempt}
+        error = {**exc.to_dict(), "attempts": attempt, "stage": stage.value}
         return Outcome("dead", exc.message, error=error, next_attempt=attempt)
     delay = s.backoff_for(attempt)
     if isinstance(exc, RateLimited) and exc.retry_after:

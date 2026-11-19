@@ -1,0 +1,110 @@
+// Shared helpers for the background service worker, popup and options page.
+
+export const DEFAULT_GATEWAY = "http://localhost:8000";
+
+export const STAGES = [
+  { status: "QUEUED", label: "Queued" },
+  { status: "TRANSCRIBING", label: "Transcribing" },
+  { status: "SUMMARIZING", label: "Summarizing" },
+  { status: "EXTRACTING_FRAMES", label: "Extracting frames" },
+  { status: "PUBLISHING", label: "Publishing" },
+  { status: "DONE", label: "Done" },
+];
+
+export const TERMINAL = new Set(["COMPLETED", "COMPLETED_WITH_WARNINGS", "FAILED", "DEAD_LETTERED"]);
+
+export function stageIndex(status) {
+  if (TERMINAL.has(status)) return STAGES.length - 1;
+  const i = STAGES.findIndex((s) => s.status === status);
+  return i < 0 ? 0 : i;
+}
+
+export async function getGateway() {
+  const { gatewayUrl } = await chrome.storage.sync.get("gatewayUrl");
+  return (gatewayUrl || DEFAULT_GATEWAY).replace(/\/+$/, "");
+}
+
+export class ApiError extends Error {
+  constructor(code, message, status = 0, body = null) {
+    super(message);
+    this.code = code;
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export async function api(path, { method = "GET", body, timeoutMs = 15000 } = {}) {
+  const base = await getGateway();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(base + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    throw new ApiError("GATEWAY_UNREACHABLE", `Can't reach the note-taking server at ${base}. Is it running?`);
+  } finally {
+    clearTimeout(timer);
+  }
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (_) {
+    /* empty body */
+  }
+  if (!res.ok) {
+    const err = (data && data.error) || {};
+    throw new ApiError(err.code || `HTTP_${res.status}`, err.message || `Server error (${res.status})`, res.status, data);
+  }
+  return data;
+}
+
+export function fmtTime(sec) {
+  sec = Math.max(0, Math.round(Number(sec) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// Human-readable explanations for machine error codes. Raw JSON is never shown to the user.
+const ERROR_TEXT = {
+  VIDEO_TOO_LONG: ["Video is too long", "Only videos up to 20 minutes are supported."],
+  NO_TRANSCRIPT: ["No transcript available", "This video has no captions, so it can't be summarized. Try a video with subtitles."],
+  VIDEO_UNAVAILABLE: ["Video unavailable", "The video is private, removed or region-locked."],
+  VIDEO_AGE_RESTRICTED: ["Age-restricted video", "Age-restricted videos can't be processed."],
+  VIDEO_MEMBERS_ONLY: ["Members-only video", "Members-only videos can't be processed."],
+  VIDEO_IS_LIVE: ["Live stream", "Live streams and premieres can't be processed. Try again once it has ended."],
+  NOTION_UNAUTHORIZED: ["Notion access expired", "Reconnect Notion and try again."],
+  NOTION_PARENT_NOT_ACCESSIBLE: ["Notion page not shared", "The destination page isn't shared with Video Note Taker. Reconnect Notion and select the page."],
+  NOTION_NO_DESTINATION: ["No Notion destination", "Reconnect Notion and select at least one page to share."],
+  INVALID_NOTION_PARENT: ["Invalid Notion page", "The configured Notion destination isn't a valid page."],
+  LLM_AUTH_FAILED: ["AI service misconfigured", "The server's Claude API key was rejected. Contact the administrator."],
+  LLM_NOT_CONFIGURED: ["AI service misconfigured", "The server has no Claude API key configured."],
+  LLM_MODEL_NOT_FOUND: ["AI service misconfigured", "The configured Claude model doesn't exist."],
+  LLM_REFUSED: ["Couldn't summarize", "The AI declined to summarize this video."],
+  GATEWAY_UNREACHABLE: ["Server unreachable", null],
+  QUEUE_UNAVAILABLE: ["Server busy", "The job queue is temporarily unavailable. Try again in a moment."],
+  INVALID_YOUTUBE_URL: ["Not a YouTube video", "Open a YouTube video page and try again."],
+  MISSING_NOTION_TOKEN: ["Notion not connected", "Connect Notion first."],
+  OAUTH_NOT_CONFIGURED: ["Notion not configured", "The server is missing its Notion OAuth credentials."],
+  OAUTH_EXCHANGE_FAILED: ["Notion sign-in failed", null],
+  OAUTH_CANCELLED: ["Notion sign-in cancelled", "Click Take Notes again to connect Notion."],
+};
+
+export function friendlyError(error) {
+  if (!error) return { title: "Something went wrong", detail: "" };
+  const [title, detail] = ERROR_TEXT[error.code] || [null, null];
+  return {
+    title: title || "Something went wrong",
+    detail: detail || error.message || "",
+  };
+}
+
+export function needsReconnect(error) {
+  return !!error && ["NOTION_UNAUTHORIZED", "NOTION_PARENT_NOT_ACCESSIBLE", "NOTION_NO_DESTINATION", "MISSING_NOTION_TOKEN"].includes(error.code);
+}

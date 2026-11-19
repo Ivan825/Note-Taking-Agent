@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Note Taker</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="top">
+    <img src="icons/icon48.png" alt="" class="logo" />
+    <div class="brand">
+      <h1>Video Note Taker</h1>
+      <p class="sub">YouTube → study notes in Notion</p>
+    </div>
+    <button id="notion-chip" class="chip" type="button" title="Notion connection"></button>
+  </header>
+
+  <section id="current" class="current" hidden>
+    <div class="current-text">
+      <span class="eyebrow">This tab</span>
+      <span id="current-title" class="current-title"></span>
+    </div>
+    <button id="take-notes" class="btn primary" type="button">Take notes</button>
+  </section>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main>
+    <div class="list-head">
+      <h2>Jobs</h2>
+      <button id="clear" class="link" type="button" hidden>Clear finished</button>
+    </div>
+    <ol id="jobs" class="jobs" aria-live="polite"></ol>
+    <div id="empty" class="empty" hidden>
+      <div class="empty-art" aria-hidden="true">▶</div>
+      <p class="empty-title">No notes yet</p>
+      <p class="empty-text">Open any YouTube video (up to 20 minutes) and click <b>Take Notes</b> in the player toolbar.</p>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <span id="server" class="server"></span>
+    <a href="options.html" target="_blank" class="link">Settings</a>
+  </footer>
+
+  <template id="job-tpl">
+    <li class="job">
+      <div class="job-head">
+        <img class="thumb" alt="" />
+        <div class="job-meta">
+          <p class="job-title"></p>
+          <p class="job-status"><span class="dot"></span><span class="status-text"></span></p>
+        </div>
+      </div>
+      <ol class="steps"></ol>
+      <div class="bar"><div class="bar-fill"></div></div>
+      <p class="detail"></p>
+      <ul class="warnings"></ul>
+      <div class="actions"></div>
+    </li>
+  </template>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
