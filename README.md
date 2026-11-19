@@ -1,5 +1,8 @@
 # Video Note Taker: a distributed multimodal note-taking agent
 
+[![CI](https://github.com/Ivan825/Note-Taking-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Ivan825/Note-Taking-Agent/actions/workflows/ci.yml)
+[![coverage](https://codecov.io/gh/Ivan825/Note-Taking-Agent/branch/main/graph/badge.svg)](https://codecov.io/gh/Ivan825/Note-Taking-Agent)
+
 Click **Take Notes** on any YouTube video (up to 20 minutes). A few minutes later a Notion page
 appears with structured study notes and **real frames from the video**: diagrams and slides
 captured at the moments that matter, each with a caption explaining what it shows and why it
@@ -37,6 +40,12 @@ Then load the extension:
    Notion's consent screen once. After that the token is stored and you won't be asked again.
 4. Click the extension icon to follow progress: Queued → Transcribing → Summarizing → Extracting
    Frames → Publishing → Done. Then click **View in Notion**.
+   Failed cards have a **Retry** button (it starts a new job) and queued cards have a **Cancel** button.
+   A desktop notification appears when a job finishes, even with the popup closed. Click it to open the Notion page.
+   The badge shows the number of active jobs, then a green ✓ (or red !) for about 10 seconds when a job finishes.
+5. **History** (popup footer) lists every job with search and a status filter. **Settings** shows the connected
+   workspace, a **Disconnect Notion** button, and a **Destination page** picker. New jobs publish under the page you
+   pick, and **Use default (Video Notes)** switches back.
 
 The extension's ID is fixed at `cfajbkllcohlnhfahfccoiopccagglon` (by the `key` in
 `manifest.json`), so the Notion redirect URI is always
@@ -90,6 +99,7 @@ callers can pass any page id, or a database id, as `notion_parent_id`.
 | `MAX_VIDEO_SECONDS` | `1200` | Constraint A: the 20-minute cap |
 | `FRAME_TIMEOUT_SECONDS` | `60` | Timeout for one ffmpeg frame capture |
 | `ENABLE_DEBUG_ENDPOINTS` | `true` | Exposes `POST /debug/chaos` for fault injection during the demo |
+| `ADMIN_TOKEN` | *(unset)* | Enables `/admin` (DLQ inspect + replay). Clients send it as `X-Admin-Token`; unset means `/admin` isn't mounted at all |
 | `PUBLIC_BASE_URL` | `http://localhost:8000` | Public URL of the gateway |
 | `LOG_LEVEL` | `INFO` | Log verbosity |
 
@@ -104,6 +114,11 @@ callers can pass any page id, or a database id, as `notion_parent_id`.
 | `GET /jobs/{id}/results` | `409` until the job is terminal. Then `{status, result: {notion_page_url, frames_requested, frames_published}, warnings, error}`. |
 | `GET /healthz` | Checks that the gateway, RabbitMQ, PostgreSQL and Redis are all reachable, plus queue depth and consumer count. |
 | `GET /oauth/notion/config`, `POST /oauth/notion/exchange` | Used by the extension for the one-time OAuth. The exchange returns the token to the extension and doesn't store it. |
+| `POST /jobs/{id}/retry` | Body `{notion_token, notion_parent_id?}`. Only for `FAILED`/`DEAD_LETTERED` jobs (else `409`). Creates a **new** job for the same video and returns `202` with the same body as `POST /jobs`; the old job is untouched. |
+| `DELETE /jobs/{id}` | Cancels a job that is still `QUEUED`: it becomes `FAILED` with `error.code = "CANCELLED"` and the worker drops its message. `409` with `JOB_ALREADY_STARTED` once a worker has picked it up, or `JOB_ALREADY_FINISHED` if it has already ended. |
+| `POST /notion/pages/search` | Body `{notion_token, query}` → `[{id, title, icon}]` of pages shared with the connection (proxies Notion search; the token is not stored). Used by the extension's Settings page. |
+| `GET /metrics` | Prometheus metrics: `jobs_total{status}`, `queue_depth{queue}`, `stage_duration_seconds{stage}` (histogram), `ratelimit_wait_seconds_total{bucket}`. |
+| `GET /admin/dlq`, `POST /admin/dlq/{id}/replay`, `GET /admin` | DLQ admin, only when `ADMIN_TOKEN` is set (see below). |
 | `GET/POST/DELETE /debug/chaos` | Fault injection for the demo (see below). |
 
 Example:
@@ -112,6 +127,33 @@ Example:
 curl -s -XPOST localhost:8000/jobs -H 'content-type: application/json' \
   -d '{"youtube_url":"https://www.youtube.com/watch?v=aircAruvnKk","notion_token":"<token>"}'
 ```
+
+### Dead-letter queue admin
+
+Set `ADMIN_TOKEN` in `.env` and restart the gateway. Every `/admin` route needs that token, sent as an
+`X-Admin-Token` header (or as the password of HTTP Basic auth, so you can open the page in a browser: any user name works).
+Missing or wrong token → `401`.
+
+```bash
+curl -s localhost:8000/admin/dlq -H "X-Admin-Token: $ADMIN_TOKEN"            # list DEAD_LETTERED jobs + jobs.dlq depth
+curl -s -XPOST localhost:8000/admin/dlq/<job_id>/replay -H "X-Admin-Token: $ADMIN_TOKEN"
+```
+
+A replay moves the job's original message (with its encrypted Notion token) from `jobs.dlq` back onto `jobs.work`,
+resets the job to `QUEUED` with `attempt = 1`, and keeps its checkpoints so it resumes where it stopped. This is the
+only way a job ever leaves a terminal state. A job that isn't dead-lettered, or whose message is no longer in
+`jobs.dlq`, returns `409`. `http://localhost:8000/admin` shows the same list with a **Replay** button per job.
+
+### Monitoring (optional)
+
+```bash
+docker compose --profile monitoring up -d      # adds Prometheus (:9090) and Grafana (:3000)
+```
+
+Grafana opens on the provisioned **Video Note Taker** dashboard (anonymous access, local demo only): jobs per status,
+queue depth (`jobs.work`, the delay queues, `jobs.dlq`), p50/p95 duration per stage and rate-limiter wait time. Run
+`make burst` to watch it move. A plain `docker compose up` doesn't start either service. Stage durations come from the
+`stage_timings` column, which the gateway adds to an existing `jobs` table on startup, so you don't need `down -v`.
 
 ---
 
@@ -235,14 +277,18 @@ gateway/app/           FastAPI gateway (jobs, oauth, healthz, debug routes)
 worker/worker/         consumer + pipeline (stages/transcribe, synthesize, frames, publish)
 extension/             Chrome MV3 extension (content script, background worker, popup, options)
 scripts/demo/          one-command failure demos
-tests/                 unit tests (make test)
+tests/                 unit tests (make test); tests/integration/ runs against the compose stack
+monitoring/            Prometheus config + provisioned Grafana dashboard (compose profile "monitoring")
+.github/workflows/     CI: ruff, unit tests with coverage, compose integration tests
 docs/                  architecture, spec, teammate task brief
 ```
 
 ## Development
 
 ```bash
-make test          # unit tests (SQLite + fake broker, no network)
+make test          # unit tests (SQLite + fake broker, no network); integration tests are skipped
+ruff check .       # lint (ruff.toml: E, F, I at 120 columns)
+INTEGRATION=1 .venv/bin/pytest -q tests/integration   # against a running stack (CI uses MAX_ATTEMPTS=2, BACKOFF_SECONDS=2)
 make logs          # follow gateway + worker logs
 make health        # pretty-print /healthz
 make down          # stop (keeps data); make clean also removes volumes
