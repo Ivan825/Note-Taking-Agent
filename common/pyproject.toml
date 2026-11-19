@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "notes-common"
+version = "1.0.0"
+description = "Shared library for the Video Note-Taking Agent (config, models, broker, rate limiting)"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic-settings==2.16.3",
+  "sqlalchemy==2.1.9",
+  "psycopg[binary]==3.3.9",
+  "pika==1.5.0",
+  "redis==8.1.0",
+  "cryptography==50.0.2",
+  "httpx==0.28.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["notes_common*"]
