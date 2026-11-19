@@ -58,8 +58,10 @@ def frame_caption(ts: float, caption: str, reason: str, video_url: str) -> list[
     ]
 
 
-def page_title(video_title: str, tag: str) -> str:
-    return f"{video_title[:180]} · #{tag}"
+def page_title(title: str, tag: str) -> str:
+    # The short job tag stays in the title: publishing finds an existing page by it, so a redelivered job
+    # can never create a second page.
+    return f"{title.strip()[:160]} · {tag}"
 
 
 def build_children(*, meta: dict, synthesis: dict, frames: list[dict], video_url: str,

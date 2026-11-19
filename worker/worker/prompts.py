@@ -12,6 +12,7 @@ SYSTEM_NOTES = (
 CHUNK_SCHEMA: dict = {
     "type": "object",
     "properties": {
+        "title": {"type": "string"},
         "overview": {"type": "string"},
         "takeaways": {"type": "array", "items": {"type": "string"}},
         "sections": {
@@ -41,17 +42,18 @@ CHUNK_SCHEMA: dict = {
             },
         },
     },
-    "required": ["overview", "takeaways", "sections", "key_frames"],
+    "required": ["title", "overview", "takeaways", "sections", "key_frames"],
     "additionalProperties": False,
 }
 
 MERGE_SCHEMA: dict = {
     "type": "object",
     "properties": {
+        "title": {"type": "string"},
         "overview": {"type": "string"},
         "takeaways": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["overview", "takeaways"],
+    "required": ["title", "overview", "takeaways"],
     "additionalProperties": False,
 }
 
@@ -93,6 +95,8 @@ Produce:
    moments where only the speaker is likely to be on screen.
 3. overview - a 2-3 sentence summary.
 4. takeaways - the 3-5 most important things to remember.
+5. title - the title of the notes page: a clear, specific name for what the video teaches, at most 8 words,
+   in title case, with no channel name, episode number, emoji or clickbait.
 
 Transcript (each line starts with its [m:ss] timestamp):
 {transcript}"""
@@ -105,8 +109,9 @@ def merge_prompt(*, title: str, parts: list[dict]) -> str:
     )
     return (
         f'These are partial notes for consecutive parts of the video "{title}". Write one overview '
-        "(3-4 sentences) for the whole video and the 4-6 most important takeaways overall, keeping the "
-        f"video's order.\n\n{body}"
+        "(3-4 sentences) for the whole video, the 4-6 most important takeaways overall, keeping the "
+        "video's order, and a title for the notes page: clear and specific, at most 8 words, title case, "
+        f"no channel name, episode number, emoji or clickbait.\n\n{body}"
     )
 
 

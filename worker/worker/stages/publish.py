@@ -2,7 +2,7 @@
 
 Idempotent by construction, so a redelivered message can never produce a duplicate page:
   1. each frame is uploaded once; its upload id is checkpointed (re-uploaded only if it expired);
-  2. before creating, look for a page already created for this job (title tag "#<job8>");
+  2. before creating, look for a page already created for this job (title tag "<job8>");
   3. the whole page is created in ONE request and its id is saved immediately.
 """
 
@@ -49,7 +49,7 @@ def run(job_id: uuid.UUID, video_id: str, notion_token: str, parent_id: str | No
             parent = client.resolve_parent(parent_id)
 
             tag = _job_tag(job_id)
-            existing = client.find_child_page_with_tag(parent, f"#{tag}")
+            existing = client.find_child_page_with_tag(parent, tag)  # also matches older "#tag" titles
             if existing:
                 page_id = existing["id"]
                 page_url = existing.get("url") or f"https://www.notion.so/{page_id.replace('-', '')}"
@@ -76,7 +76,7 @@ def run(job_id: uuid.UUID, video_id: str, notion_token: str, parent_id: str | No
                     })
 
                 jobstore.set_progress(job_id, 95, "Creating the Notion page")
-                title = notion_blocks.page_title(meta.get("title") or video_id, tag)
+                title = notion_blocks.page_title(synthesis.get("title") or meta.get("title") or video_id, tag)
                 parent_obj = {k: v for k, v in parent.items() if not k.startswith("_")}
                 title_prop = parent.get("_title_prop", "title")
                 body = {

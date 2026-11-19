@@ -148,7 +148,7 @@ def run(job_id: uuid.UUID) -> dict:
 
     merged = merge_chunks(parts)
     if len(parts) == 1:
-        overview, takeaways = parts[0]["overview"], parts[0]["takeaways"]
+        title, overview, takeaways = parts[0].get("title", ""), parts[0]["overview"], parts[0]["takeaways"]
     else:
         jobstore.set_progress(job_id, 46, "Combining notes from all parts")
         combined = claude.structured_call(
@@ -157,7 +157,7 @@ def run(job_id: uuid.UUID) -> dict:
             schema=prompts.MERGE_SCHEMA,
             max_tokens=4000,
         )
-        overview, takeaways = combined["overview"], combined["takeaways"]
+        title, overview, takeaways = combined.get("title", ""), combined["overview"], combined["takeaways"]
 
     sections = [
         {
@@ -173,6 +173,7 @@ def run(job_id: uuid.UUID) -> dict:
     )
 
     synthesis = {
+        "title": title.strip(),
         "overview": overview.strip(),
         "takeaways": [t.strip() for t in takeaways if t.strip()],
         "sections": sections,
