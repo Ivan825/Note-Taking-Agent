@@ -25,3 +25,6 @@ htmlcov/
 /Note Taking agent.pdf
 *.log
 tmp/
+
+# Local reference material (not part of the submission)
+/docs/

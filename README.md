@@ -1,7 +1,6 @@
 # Video Note Taker: a distributed multimodal note-taking agent
 
 [![CI](https://github.com/Ivan825/Note-Taking-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Ivan825/Note-Taking-Agent/actions/workflows/ci.yml)
-[![coverage](https://codecov.io/gh/Ivan825/Note-Taking-Agent/branch/main/graph/badge.svg)](https://codecov.io/gh/Ivan825/Note-Taking-Agent)
 
 Click **Take Notes** on any YouTube video (up to 20 minutes). A few minutes later a Notion page
 appears with structured study notes and **real frames from the video**: diagrams and slides
@@ -16,7 +15,7 @@ Chrome extension ──▶ API gateway ──▶ RabbitMQ ──▶ worker × N 
 
 * **Base URL:** `http://localhost:8000`. Interactive API docs are at `/docs`, the health check at `/healthz`.
 * **RabbitMQ UI:** `http://localhost:15672` (user `notes`, password `notes`). It shows `jobs.work`, the delay queues and `jobs.dlq`.
-* Deep dive: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Spec: [`docs/spec.pdf`](docs/spec.pdf).
+* How it works: see [Architecture](#architecture) below.
 
 ---
 
@@ -209,6 +208,83 @@ they happen.
 
 ---
 
+## Architecture
+
+Each component is its own container (`docker compose ps`), so any one of them can be killed or scaled
+without touching the others. The gateway only validates, records and enqueues; all pipeline work happens
+in the workers.
+
+### Job lifecycle
+
+```
+QUEUED → TRANSCRIBING → SUMMARIZING → EXTRACTING_FRAMES → PUBLISHING → COMPLETED
+                                                                      ↘ COMPLETED_WITH_WARNINGS
+any non-terminal state → FAILED          (non-retryable error)
+any non-terminal state → DEAD_LETTERED   (retry budget exhausted)
+```
+
+`common/notes_common/states.py` holds the allowed-transition table. Every status change locks the job row
+and rejects illegal moves. Re-entering the current stage is allowed, because that is how a redelivered job
+resumes.
+
+### Delivery semantics
+
+* **At-least-once.** Workers consume with `auto_ack=False` and `prefetch=1`. A message is acked only after
+  the job reached a terminal state in Postgres, or after its retry copy (delay queue) or DLQ copy was
+  *confirmed by the broker*.
+* **Crash recovery.** The pipeline runs in a thread while the main thread keeps the AMQP connection alive
+  with heartbeats. When a worker dies, even from `SIGKILL`, the connection drops and RabbitMQ immediately
+  redelivers the unacked message to another worker.
+* **Idempotent stages.** Each stage checkpoints its output to Postgres before the next one starts: `meta`,
+  `transcript`, `chunk:N`, `synthesis`, one `frames` row per timestamp (with the JPEG and its Notion upload
+  id). A redelivered job skips everything already done.
+* **No duplicate Notion pages.** The page is created in a single API call, its title carries a `#<job8>`
+  tag and its id is saved immediately. Before creating, the worker checks for a saved id, then scans the
+  parent for the tag.
+* **Stale copies are dropped.** Messages carry `x-attempt`; a copy older than the job's current attempt is
+  acked and ignored.
+* **Broker restarts.** RabbitMQ has a fixed hostname, so durable queues keep their messages across container
+  re-creation. A worker that loses the broker exits and `restart: unless-stopped` brings it back.
+
+### Retry policy
+
+| Error class | Examples | Action |
+|---|---|---|
+| `RateLimited` | HTTP 429 from Claude, Notion or YouTube; our own limiter saturated | Re-queue into `jobs.delay.<N>s` (honouring `Retry-After`). The status stays on the current stage and the popup shows "retrying in Ns". |
+| `TransientError` | 5xx, network errors, private/unavailable video | Same as `RateLimited` |
+| `PermanentError` | too long, no transcript and no speech, bad Notion token | `FAILED` immediately |
+| budget exhausted | `attempt > MAX_ATTEMPTS` | published to `jobs.dlq`, status `DEAD_LETTERED` |
+
+The backoff comes from `BACKOFF_SECONDS`. One durable delay queue per step (`x-message-ttl` plus
+dead-lettering back to `jobs.work`), so waiting jobs never occupy a worker.
+
+### Global rate limiting
+
+`common/notes_common/ratelimit.py` keeps one token bucket per external API in Redis, updated atomically by a
+Lua script using Redis' clock. Every worker takes tokens before each call:
+
+| Bucket | Default | Purpose |
+|---|---|---|
+| `llm_requests` | `LLM_RPM` = 40/min | stay under Claude's requests-per-minute limit |
+| `llm_input_tokens` | `LLM_ITPM` = 40k/min, cost = estimated prompt tokens | stay under Claude's input-tokens-per-minute limit |
+| `notion` | `NOTION_RPS` = 2.5/s | Notion allows about 3 requests/second |
+| `youtube` | `YOUTUBE_RPS` = 1/s | stay polite to YouTube |
+
+Waits up to about 20 s are slept; longer ones become a `RateLimited` re-queue. Because the budgets sit below
+the provider limits, a burst drains without Claude ever returning a 429.
+
+### Notion OAuth and token handling
+
+* A public Notion connection. The extension runs `chrome.identity.launchWebAuthFlow` with the redirect URI
+  `https://<extension-id>.chromiumapp.org/notion` (the id is pinned by `key` in `manifest.json`).
+* The gateway exchanges the code (`POST /oauth/notion/exchange`), so the client secret never ships in the
+  extension. The token goes back to the extension, is stored in `chrome.storage.local`, and is sent with every
+  job. The gateway never stores it: it travels inside the queued message encrypted with Fernet (`TOKEN_ENC_KEY`).
+* Each image caption on the Notion page reads `[m:ss] <what it shows>. Why it matters: <reason>`, and a
+  callout notes any omitted frame.
+
+---
+
 ## Spec compliance checklist
 
 **Components (§1.1)**
@@ -257,7 +333,7 @@ they happen.
 
 | Check | Result |
 |---|---|
-| 18:40 video (*But what is a neural network?*) end to end | **46.8 s** from submit to published page. 6/6 real frames, each re-captioned from its pixels |
+| 18:40 video (*But what is a neural network?*) end to end | **37.8 s** from submit to published page. 6/6 real frames, each re-captioned from its pixels |
 | 10:17 video **without captions** (speech-to-text path) | **133 s** (about 75 s of it is Whisper). 6/6 frames |
 | 429 from YouTube, then Claude, then Notion on one job | Waited 10 s, 30 s and 90 s ("Rate-limited by …, retrying in Ns"), then `COMPLETED` |
 | `SIGKILL` of the worker during `EXTRACTING_FRAMES` | Another worker resumed within about 1 s and finished 23 s later. `recoveries: 1`, exactly one Notion page |
@@ -281,7 +357,6 @@ scripts/demo/          one-command failure demos
 tests/                 unit tests (make test); tests/integration/ runs against the compose stack
 monitoring/            Prometheus config + provisioned Grafana dashboard (compose profile "monitoring")
 .github/workflows/     CI: ruff, unit tests with coverage, compose integration tests
-docs/                  architecture, spec, teammate task brief
 ```
 
 ## Development
