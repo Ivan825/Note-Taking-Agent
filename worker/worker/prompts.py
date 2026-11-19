@@ -77,16 +77,19 @@ def chunk_prompt(*, title: str, channel: str, duration: str, part: int, parts: i
 Produce:
 1. sections - the topics covered, in order. Each has a short descriptive heading, start_sec (when the topic
    begins, in seconds), and 2-6 bullets with the key ideas, definitions, formulas, steps or examples.
-2. key_frames - up to {max_frames} moments where the screen most likely shows something visually important
-   that is worth capturing as an image: a diagram, slide, chart, equation, code, worked example or
-   demonstration. Use cues in the narration ("as you can see", "this diagram", "here", "look at",
-   drawing or writing on screen). For each:
+2. key_frames - between {min(3, max_frames)} and {max_frames} moments where the screen most likely shows
+   something visually important that is worth capturing as an image: a diagram, slide, chart, equation,
+   code, worked example or demonstration. Use cues in the narration ("as you can see", "this diagram",
+   "here", "look at", drawing or writing on screen). If the narration has few explicit cues (talks,
+   commentary, news), still pick the moments most likely to show informative on-screen content - text or
+   headlines, charts, screenshots, product shots or footage illustrating the point - typically a few
+   seconds into a new topic. Each frame is captured from the real video and re-captioned from its actual
+   pixels, so only real content is ever shown. For each:
    - timestamp_sec: when the visual is fully on screen - usually 2-6 seconds after the cue - and inside
      {start}-{end}.
    - caption: one sentence describing what the frame shows.
    - reason: one sentence explaining why this visual matters for understanding the material.
-   Prefer fewer, high-value frames spread across the video. Never pick a moment where only the speaker is
-   on screen. Return an empty list if the video has no meaningful visuals.
+   Spread them across the video and avoid moments where only the speaker is likely to be on screen.
 3. overview - a 2-3 sentence summary.
 4. takeaways - the 3-5 most important things to remember.
 
