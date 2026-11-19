@@ -2,3 +2,5 @@
 -r gateway/requirements.txt
 -r worker/requirements.txt
 pytest==9.2.0
+ruff==0.17.5
+pytest-cov==7.1.0
