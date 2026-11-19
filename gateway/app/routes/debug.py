@@ -15,6 +15,7 @@ class ChaosBody(BaseModel):
     notion_429: int | None = Field(None, ge=0, le=50, description="Next N Notion calls behave as HTTP 429")
     youtube_429: int | None = Field(None, ge=0, le=50, description="Next N YouTube calls behave as HTTP 429")
     frame_fail: str | None = Field(None, description='"all", "first:N", or comma-separated timestamps in seconds')
+    no_captions: bool | None = Field(None, description="Pretend YouTube has no captions (speech-to-text fallback)")
 
 
 @router.get("/chaos")
@@ -30,6 +31,8 @@ def set_chaos(body: ChaosBody):
             chaos.set_429(api, value)
     if body.frame_fail is not None:
         chaos.set_frame_fail(body.frame_fail)
+    if body.no_captions is not None:
+        chaos.set_no_captions(body.no_captions)
     return chaos.state()
 
 

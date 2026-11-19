@@ -61,7 +61,7 @@ def page_title(video_title: str, tag: str) -> str:
 
 
 def build_children(*, meta: dict, synthesis: dict, frames: list[dict], video_url: str,
-                   frames_requested: int) -> list[dict]:
+                   frames_requested: int, transcript_source: str = "captions") -> list[dict]:
     """`frames` = [{timestamp_sec, caption, reason, upload_id}] for successfully captured frames."""
     duration = meta.get("duration_sec") or 0
     header = callout(
@@ -71,6 +71,13 @@ def build_children(*, meta: dict, synthesis: dict, frames: list[dict], video_url
         _text(f"  ·  {meta.get('channel', '')}  ·  {mmss(duration)}  ·  generated {date.today().isoformat()}"),
     )
     blocks: list[dict] = [header]
+    if transcript_source == "speech_to_text":
+        blocks.append(callout(
+            "🎙️",
+            _text("This video has no captions, so its transcript was produced by automatic speech recognition. "
+                  "Names and technical terms may be slightly off."),
+            color="blue_background",
+        ))
 
     if synthesis.get("overview"):
         blocks += [heading(2, _text("Overview")), paragraph(_text(synthesis["overview"]))]

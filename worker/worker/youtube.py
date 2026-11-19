@@ -7,6 +7,7 @@ failure is classified as RateLimited / TransientError / PermanentError.
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 import yt_dlp
@@ -24,6 +25,7 @@ from youtube_transcript_api import (
 )
 
 from notes_common import chaos, ratelimit
+from notes_common.config import get_settings
 from notes_common.errors import PermanentError, RateLimited, TransientError
 from notes_common.redis_client import get_redis
 
@@ -72,6 +74,9 @@ def _classify_ytdlp(exc: Exception) -> Exception:
 
 def _ydl(opts: dict) -> yt_dlp.YoutubeDL:
     base = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, "logger": _QuietLogger()}
+    cookies = get_settings().youtube_cookies_file
+    if cookies and os.path.isfile(cookies):
+        base["cookiefile"] = cookies  # optional: helps when YouTube bot-checks this IP
     base.update(opts)
     return yt_dlp.YoutubeDL(base)
 
@@ -125,6 +130,8 @@ def fetch_transcript(video_id: str) -> tuple[list[dict], str]:
     """Return ([{start, duration, text}], language_code). Prefers English, falls back to any
     available transcript (translated to English when YouTube allows it)."""
     _guard()
+    if chaos.captions_disabled():
+        raise PermanentError("This video has no captions/transcript available (simulated)", "NO_TRANSCRIPT")
     api = YouTubeTranscriptApi()
     try:
         try:
@@ -163,3 +170,30 @@ def fetch_transcript(video_id: str) -> tuple[list[dict], str]:
     if not segments:
         raise PermanentError("This video's transcript is empty", "NO_TRANSCRIPT")
     return segments, getattr(fetched, "language_code", "en")
+
+
+AUDIO_FORMAT = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+
+
+def download_audio(video_id: str, dest_dir: str) -> str:
+    """Download only the audio track (used for speech-to-text when there are no captions)."""
+    _guard()
+    os.makedirs(dest_dir, exist_ok=True)
+    opts = {
+        "format": AUDIO_FORMAT,
+        "skip_download": False,
+        "outtmpl": os.path.join(dest_dir, "audio.%(ext)s"),
+        "overwrites": True,
+        "retries": 3,
+    }
+    try:
+        with _ydl(opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+            path = ydl.prepare_filename(info)
+    except yt_dlp.utils.DownloadError as exc:
+        raise _classify_ytdlp(exc) from exc
+    except Exception as exc:
+        raise TransientError(f"Could not download the audio: {exc}", "AUDIO_DOWNLOAD_FAILED") from exc
+    if not os.path.isfile(path):
+        raise TransientError("Audio download produced no file", "AUDIO_DOWNLOAD_FAILED")
+    return path

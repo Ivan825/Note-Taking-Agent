@@ -48,10 +48,15 @@ def transition(job_id: uuid.UUID, new: Status, detail: str | None = None, progre
 
 
 def set_progress(job_id: uuid.UUID, progress: int, detail: str | None = None) -> None:
-    fields: dict[str, Any] = {"progress": progress}
-    if detail is not None:
-        fields["status_detail"] = detail
-    update_job(job_id, **fields)
+    """Progress never moves backwards (a resumed job re-runs idempotent stages)."""
+    with session_scope() as db:
+        job = db.get(Job, job_id)
+        if job is None:
+            return
+        job.progress = max(job.progress or 0, int(progress))
+        if detail is not None:
+            job.status_detail = detail
+        job.updated_at = utcnow()
 
 
 def add_warning(job_id: uuid.UUID, warning: dict) -> None:

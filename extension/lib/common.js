@@ -75,6 +75,10 @@ export function fmtTime(sec) {
 const ERROR_TEXT = {
   VIDEO_TOO_LONG: ["Video is too long", "Only videos up to 20 minutes are supported."],
   NO_TRANSCRIPT: ["No transcript available", "This video has no captions, so it can't be summarized. Try a video with subtitles."],
+  NO_SPEECH: ["No speech found", "This video has no captions and no recognizable speech to take notes from."],
+  ASR_FAILED: ["Speech recognition failed", "The audio couldn't be transcribed. Please try again."],
+  AUDIO_DOWNLOAD_FAILED: ["Couldn't download audio", "The video's audio couldn't be downloaded for transcription."],
+  YOUTUBE_BOT_CHECK: ["YouTube blocked the request", "YouTube asked for a sign-in check. Try again in a few minutes."],
   VIDEO_UNAVAILABLE: ["Video unavailable", "The video is private, removed or region-locked."],
   VIDEO_AGE_RESTRICTED: ["Age-restricted video", "Age-restricted videos can't be processed."],
   VIDEO_MEMBERS_ONLY: ["Members-only video", "Members-only videos can't be processed."],

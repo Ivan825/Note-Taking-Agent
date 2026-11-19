@@ -85,6 +85,7 @@ def run(job_id: uuid.UUID, video_id: str, notion_token: str, parent_id: str | No
                     "children": notion_blocks.build_children(
                         meta=meta, synthesis=synthesis, frames=published, video_url=video_url,
                         frames_requested=frames_requested,
+                        transcript_source=(jobstore.get_artifact(job_id, "transcript") or {}).get("source", "captions"),
                     ),
                 }
                 if meta.get("thumbnail"):

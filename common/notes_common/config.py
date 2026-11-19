@@ -38,6 +38,12 @@ class Settings(BaseSettings):
 
     # YouTube
     youtube_rps: float = 1.0
+    youtube_cookies_file: str = ""
+
+    # Speech-to-text fallback (videos without captions)
+    asr_fallback: bool = True
+    whisper_model: str = "base"
+    whisper_threads: int = 4
 
     # Retry policy
     max_attempts: int = 5

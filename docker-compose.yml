@@ -67,6 +67,8 @@ services:
     image: note-taker/worker:latest
     deploy:
       replicas: 2          # override with: docker compose up --scale worker=N
+    volumes:
+      - ./cookies:/run/cookies:ro   # optional YouTube cookies.txt (see README)
     stop_grace_period: 20s
     depends_on:
       postgres: { condition: service_healthy }

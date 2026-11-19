@@ -4,6 +4,7 @@ State lives in Redis so a single `POST /debug/chaos` on the gateway affects ever
 
     chaos:429:<api>     integer - the next N calls to <api> (llm | notion | youtube) behave as HTTP 429
     chaos:frame_fail    "all", "first:N", or comma-separated timestamps (seconds) whose capture must fail
+    chaos:no_captions   "1" - behave as if YouTube had no captions (exercises the speech-to-text fallback)
 
 Injected 429s raise exactly the same RateLimited error that a real provider 429 raises,
 so the demo exercises the production retry path.
@@ -29,17 +30,30 @@ def set_frame_fail(value: str | None) -> None:
         r.delete("chaos:frame_fail")
 
 
+def set_no_captions(enabled: bool) -> None:
+    r = get_redis()
+    if enabled:
+        r.set("chaos:no_captions", "1")
+    else:
+        r.delete("chaos:no_captions")
+
+
+def captions_disabled() -> bool:
+    return get_redis().get("chaos:no_captions") == "1"
+
+
 def state() -> dict:
     r = get_redis()
     return {
         **{f"{api}_429": int(r.get(f"chaos:429:{api}") or 0) for api in APIS},
         "frame_fail": r.get("chaos:frame_fail") or "",
+        "no_captions": r.get("chaos:no_captions") == "1",
     }
 
 
 def clear() -> None:
     r = get_redis()
-    r.delete(*[f"chaos:429:{api}" for api in APIS], "chaos:frame_fail")
+    r.delete(*[f"chaos:429:{api}" for api in APIS], "chaos:frame_fail", "chaos:no_captions")
 
 
 def maybe_429(api: str) -> None:

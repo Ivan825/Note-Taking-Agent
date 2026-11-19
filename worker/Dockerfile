@@ -16,6 +16,10 @@ RUN pip install /srv/common
 COPY worker/requirements.txt /srv/worker/requirements.txt
 RUN pip install -r /srv/worker/requirements.txt
 
+# Speech-to-text fallback for videos without captions: bake the Whisper model into the image
+ARG WHISPER_MODEL=base
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL}', device='cpu', compute_type='int8', download_root='/opt/whisper')"
+
 COPY worker /srv/worker
 WORKDIR /srv/worker
 
