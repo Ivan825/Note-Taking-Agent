@@ -1,4 +1,8 @@
-import { STAGES, TERMINAL, api, fmtTime, friendlyError, getGateway, needsReconnect, stageIndex } from "./lib/common.js";
+import {
+  STAGES, TERMINAL, api, avatarColor, describeJob, fmtTime, friendlyError, getGateway, needsReconnect,
+  stageIndex, thumbUrl,
+} from "./lib/common.js";
+import { icon } from "./lib/icons.js";
 
 const $ = (sel) => document.querySelector(sel);
 const send = (msg) => chrome.runtime.sendMessage(msg);
@@ -15,97 +19,59 @@ function el(tag, cls, text) {
   return e;
 }
 
-function jobClass(job) {
-  if (job.status === "COMPLETED") return "ok";
-  if (job.status === "COMPLETED_WITH_WARNINGS") return "warn";
-  if (job.status === "FAILED" || job.status === "DEAD_LETTERED") return "err";
-  if (job.next_retry_at) return "waiting active";
-  return "active";
-}
-
-function statusText(job) {
-  switch (job.status) {
-    case "COMPLETED": return "Done — notes published";
-    case "COMPLETED_WITH_WARNINGS": return "Done with warnings";
-    case "FAILED": return "Failed";
-    case "DEAD_LETTERED": return "Stopped after repeated failures";
-    default: {
-      const stage = STAGES[stageIndex(job.status)];
-      return job.next_retry_at ? `${stage.label} — waiting to retry` : stage.label;
-    }
-  }
-}
-
-function retryCountdown(job) {
-  if (!job.next_retry_at) return null;
-  const secs = Math.max(0, Math.round((Date.parse(job.next_retry_at) - Date.now()) / 1000));
-  return secs;
+function pill(label, cls, iconName, onClick) {
+  const b = el("button", `pill ${cls}`);
+  b.type = "button";
+  if (iconName) b.appendChild(icon(iconName));
+  b.appendChild(document.createTextNode(label));
+  b.addEventListener("click", onClick);
+  return b;
 }
 
 function detailNode(job) {
   const p = el("p", "detail");
   if (job.status === "FAILED" || job.status === "DEAD_LETTERED") {
-    const fe = friendlyError(job.error);
-    p.appendChild(el("b", null, fe.title + ". "));
-    p.appendChild(document.createTextNode(fe.detail));
+    p.textContent = friendlyError(job.error).detail;
     if (job.status === "DEAD_LETTERED") {
-      p.appendChild(document.createTextNode(` (gave up after ${job.error?.attempts || job.max_attempts || "several"} attempts; sent to the dead-letter queue for inspection)`));
+      const n = job.error?.attempts || job.max_attempts || "several";
+      p.textContent = `${friendlyError(job.error).title}. Gave up after ${n} attempts; the job is in the dead-letter queue.`;
     }
-    return p;
-  }
-  if (job.status === "COMPLETED") {
+  } else if (job.status === "COMPLETED") {
     const r = job.result || {};
     p.textContent = r.frames_requested
-      ? `Summary and ${r.frames_published} captioned frame${r.frames_published === 1 ? "" : "s"} published to Notion.`
+      ? `Summary and ${r.frames_published} captioned frame${r.frames_published === 1 ? "" : "s"} in Notion.`
       : "Summary published to Notion.";
-    return p;
-  }
-  if (job.status === "COMPLETED_WITH_WARNINGS") {
+  } else if (job.status === "COMPLETED_WITH_WARNINGS") {
     const r = job.result || {};
-    p.textContent = `Published with ${r.frames_published ?? 0} of ${r.frames_requested ?? 0} frames.`;
-    return p;
-  }
-  const secs = retryCountdown(job);
-  if (secs !== null) {
+    p.textContent = `${r.frames_published ?? 0} of ${r.frames_requested ?? 0} frames made it into Notion.`;
+  } else if (job.next_retry_at) {
     const reason = (job.status_detail || "Temporary problem").split(" - retrying")[0];
-    p.textContent = `${reason}. Retrying ${secs > 0 ? `in ${secs}s` : "now"} (attempt ${job.attempt} of ${job.max_attempts}).`;
+    p.textContent = `${reason}. Attempt ${job.attempt} of ${job.max_attempts}.`;
   } else {
-    let text = job.status_detail || "Working…";
-    if (job.recoveries) text += ` · recovered after a worker failure`;
-    p.textContent = text;
+    p.textContent = (job.status_detail || "Working…") + (job.recoveries ? " · recovered after a worker failure" : "");
   }
-  if (job.offline) p.textContent += " (server unreachable — showing last known state)";
+  if (job.offline) p.textContent += " Server unreachable, showing the last known state.";
   return p;
 }
 
-function stepsNode(job) {
-  const ol = el("ol", "steps");
+function chaptersNode(job) {
+  const ol = el("ol", "chapters");
+  ol.setAttribute("aria-label", "Progress");
   const idx = stageIndex(job.status);
   const failed = job.status === "FAILED" || job.status === "DEAD_LETTERED";
-  // For failed jobs, highlight the stage that was running when it failed.
   const failedAt = failed ? Math.max(1, STAGES.findIndex((s) => s.status === (job.error && job.error.stage))) : -1;
   STAGES.forEach((s, i) => {
-    const li = el("li", "step");
-    const mark = el("span", "mark");
-    let label = s.label;
+    const li = el("li", "chapter");
     if (failed) {
-      if (i < failedAt) { li.classList.add("done"); mark.textContent = "✓"; }
-      else if (i === failedAt) { li.classList.add("failed", "is-current"); mark.textContent = "!"; }
-    } else if (TERMINAL.has(job.status)) {
+      if (i < failedAt) li.classList.add("done");
+      else if (i === failedAt) li.classList.add("failed");
+    } else if (TERMINAL.has(job.status) || i < idx) {
       li.classList.add("done");
-      mark.textContent = "✓";
-      if (i === STAGES.length - 1) {
-        li.classList.add("final");
-        if (job.status === "COMPLETED_WITH_WARNINGS") mark.textContent = "!";
-      }
-    } else if (i < idx) {
-      li.classList.add("done");
-      mark.textContent = "✓";
     } else if (i === idx) {
-      li.classList.add("is-current");
+      li.classList.add("current");
+      li.setAttribute("aria-current", "step");
     }
-    li.appendChild(mark);
-    li.appendChild(el("span", null, label));
+    li.append(el("span", "seg"), el("span", "label", s.label));
     ol.appendChild(li);
   });
   return ol;
@@ -114,11 +80,12 @@ function stepsNode(job) {
 function warningsNode(job) {
   const ul = el("ul", "warnings");
   for (const w of job.warnings || []) {
-    let text = w.message;
-    if (w.code === "FRAME_EXTRACTION_FAILED") {
-      text = `Frame at ${fmtTime(w.timestamp_sec)} couldn't be captured, so it was left out.`;
-    }
-    ul.appendChild(el("li", null, "⚠ " + (text || w.code)));
+    const text = w.code === "FRAME_EXTRACTION_FAILED"
+      ? `Frame at ${fmtTime(w.timestamp_sec)} couldn't be captured, so it was left out.`
+      : w.message || w.code;
+    const li = el("li");
+    li.append(icon("warning"), el("span", null, text));
+    ul.appendChild(li);
   }
   return ul;
 }
@@ -127,59 +94,95 @@ function actionsNode(job) {
   const div = el("div", "actions");
   const url = job.result && job.result.notion_page_url;
   if (url && (job.status === "COMPLETED" || job.status === "COMPLETED_WITH_WARNINGS")) {
-    const a = el("button", "btn primary", "View in Notion");
-    a.type = "button";
-    a.addEventListener("click", () => chrome.tabs.create({ url }));
-    div.appendChild(a);
+    div.appendChild(pill("View in Notion", "primary small", "open", () => chrome.tabs.create({ url })));
+  }
+  if (job.status === "FAILED" || job.status === "DEAD_LETTERED") {
+    div.appendChild(actionButton("Retry", "retry", "RETRY_JOB", job));
+  }
+  if (job.status === "QUEUED") {
+    div.appendChild(actionButton("Cancel", "close", "CANCEL_JOB", job));
   }
   if (needsReconnect(job.error)) {
-    const b = el("button", "btn secondary", "Reconnect Notion");
-    b.type = "button";
-    b.addEventListener("click", connectNotion);
-    div.appendChild(b);
+    div.appendChild(pill("Reconnect Notion", "tonal small", "account", connectNotion));
   }
   return div;
 }
 
+function actionButton(label, iconName, type, job) {
+  const b = pill(label, "tonal small", iconName, async () => {
+    b.disabled = true;
+    const res = await send({ type, job_id: job.job_id });
+    if (res && res.ok) {
+      banner(null);
+      await refresh(false);
+    } else {
+      b.disabled = false;
+      const fe = friendlyError(res && res.error);
+      banner("error", `${fe.title}. ${fe.detail}`);
+    }
+  });
+  return b;
+}
+
 function renderJob(job) {
-  const tpl = $("#job-tpl").content.firstElementChild.cloneNode(true);
-  tpl.className = `job ${jobClass(job)}`;
-  tpl.dataset.jobId = job.job_id;
-  tpl.querySelector(".thumb").src = `https://i.ytimg.com/vi/${encodeURIComponent(job.video_id)}/mqdefault.jpg`;
-  tpl.querySelector(".job-title").textContent = job.video_title || job.video_id;
-  tpl.querySelector(".job-title").title = job.video_title || "";
-  tpl.querySelector(".status-text").textContent = statusText(job);
-  tpl.querySelector(".steps").replaceWith(stepsNode(job));
-  tpl.querySelector(".bar-fill").style.width = `${Math.max(3, job.progress || 0)}%`;
-  tpl.querySelector(".detail").replaceWith(detailNode(job));
-  tpl.querySelector(".warnings").replaceWith(warningsNode(job));
-  tpl.querySelector(".actions").replaceWith(actionsNode(job));
-  return tpl;
+  const d = describeJob(job);
+  const li = $("#job-tpl").content.firstElementChild.cloneNode(true);
+  li.className = `job ${d.cls}`;
+  li.dataset.jobId = job.job_id;
+
+  li.querySelector(".thumb").src = thumbUrl(job.video_id);
+  li.querySelector(".badge").textContent = job.duration_sec ? fmtTime(job.duration_sec) : "";
+  // YouTube's red "watched" bar doubles as overall progress; failed jobs don't get one.
+  if (!d.cls.startsWith("err")) {
+    li.querySelector(".thumb-wrap").classList.add("has-bar");
+    li.querySelector(".resume").hidden = false;
+    li.querySelector(".resume-fill").style.transform = `scaleX(${Math.max(0.02, (job.progress || 0) / 100)})`;
+  }
+
+  const title = li.querySelector(".job-title");
+  title.textContent = job.video_title || job.video_id;
+  title.title = job.video_title || "";
+  const status = li.querySelector(".job-status");
+  if (d.icon) status.appendChild(icon(d.icon));
+  status.appendChild(el("span", null, d.text));
+
+  li.querySelector(".detail").replaceWith(detailNode(job));
+  li.querySelector(".chapters").replaceWith(chaptersNode(job));
+  li.querySelector(".warnings").replaceWith(warningsNode(job));
+  li.querySelector(".actions").replaceWith(actionsNode(job));
+  return li;
+}
+
+function renderAccount() {
+  const old = $("#notion-chip");
+  let btn;
+  if (state.notion) {
+    const name = state.notion.workspace_name || "Notion";
+    btn = el("button", "avatar", name.trim().charAt(0).toUpperCase());
+    btn.style.setProperty("--avatar", avatarColor(name));
+    btn.title = `Notion: ${name}. Click to reconnect.`;
+    btn.setAttribute("aria-label", `Connected to ${name} in Notion. Reconnect`);
+  } else {
+    btn = pill("Connect Notion", "outline", "account", () => {});
+  }
+  btn.id = "notion-chip";
+  btn.type = "button";
+  btn.addEventListener("click", connectNotion);
+  old.replaceWith(btn);
 }
 
 function render() {
-  const list = $("#jobs");
-  list.replaceChildren(...state.jobs.map(renderJob));
+  $("#jobs").replaceChildren(...state.jobs.map(renderJob));
   $("#empty").hidden = state.jobs.length > 0;
   $("#clear").hidden = !state.jobs.some((j) => TERMINAL.has(j.status));
-
-  const chip = $("#notion-chip");
-  if (state.notion) {
-    chip.textContent = state.notion.workspace_name || "Notion";
-    chip.className = "chip connected";
-    chip.title = "Connected to Notion — click to reconnect";
-  } else {
-    chip.textContent = "Connect Notion";
-    chip.className = "chip disconnected";
-    chip.title = "Connect your Notion workspace";
-  }
+  renderAccount();
 }
 
 function banner(kind, text) {
   const b = $("#banner");
   if (!text) { b.hidden = true; return; }
   b.className = `banner ${kind}`;
-  b.textContent = text;
+  b.replaceChildren(icon(kind === "error" ? "error" : "schedule"), el("span", null, text));
   b.hidden = false;
 }
 
@@ -196,7 +199,7 @@ async function refresh(poll = true) {
 }
 
 async function connectNotion() {
-  banner("info", "Opening Notion… choose the pages Video Note Taker may write to.");
+  banner("info", "Opening Notion. Choose the pages Video Note Taker may write to.");
   const res = await send({ type: "CONNECT_NOTION" });
   if (res && res.ok) {
     banner(null);
@@ -254,6 +257,8 @@ async function detectCurrentTab() {
       duration_sec: duration,
     };
     $("#current-title").textContent = currentVideo.title || id;
+    $("#current-thumb").src = thumbUrl(id);
+    $("#current-badge").textContent = duration ? fmtTime(duration) : "";
     $("#current").hidden = false;
   } catch (_) { /* ignore */ }
 }
@@ -274,7 +279,7 @@ async function checkServer() {
 }
 
 // ------------------------------------------------------------------ wiring
-$("#notion-chip").addEventListener("click", connectNotion);
+$("#empty-art").appendChild(icon("note"));
 $("#take-notes").addEventListener("click", takeNotesOnCurrent);
 $("#clear").addEventListener("click", async () => {
   const res = await send({ type: "CLEAR_FINISHED" });

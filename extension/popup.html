@@ -6,56 +6,60 @@
   <title>Video Note Taker</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
-<body>
-  <header class="top">
+<body class="popup">
+  <header class="masthead">
     <img src="icons/icon48.png" alt="" class="logo" />
-    <div class="brand">
-      <h1>Video Note Taker</h1>
-      <p class="sub">YouTube → study notes in Notion</p>
-    </div>
-    <button id="notion-chip" class="chip" type="button" title="Notion connection"></button>
+    <h1 class="wordmark">Video Note Taker</h1>
+    <button id="notion-chip" type="button"></button>
   </header>
 
-  <section id="current" class="current" hidden>
-    <div class="current-text">
-      <span class="eyebrow">This tab</span>
-      <span id="current-title" class="current-title"></span>
+  <section id="current" class="now" hidden>
+    <div class="thumb-wrap"><img id="current-thumb" alt="" /><span id="current-badge" class="badge"></span></div>
+    <div class="now-text">
+      <p id="current-title" class="now-title"></p>
+      <p id="current-meta" class="now-meta">On this tab</p>
     </div>
-    <button id="take-notes" class="btn primary" type="button">Take notes</button>
+    <button id="take-notes" class="pill primary" type="button">Take notes</button>
   </section>
 
-  <div id="banner" class="banner" hidden></div>
+  <div id="banner" class="banner" role="alert" hidden></div>
 
   <main>
     <div class="list-head">
-      <h2>Jobs</h2>
-      <button id="clear" class="link" type="button" hidden>Clear finished</button>
+      <h2>Your notes</h2>
+      <button id="clear" class="pill tonal small" type="button" hidden>Clear finished</button>
     </div>
     <ol id="jobs" class="jobs" aria-live="polite"></ol>
     <div id="empty" class="empty" hidden>
-      <div class="empty-art" aria-hidden="true">▶</div>
+      <div class="empty-art" id="empty-art"></div>
       <p class="empty-title">No notes yet</p>
-      <p class="empty-text">Open any YouTube video (up to 20 minutes) and click <b>Take Notes</b> in the player toolbar.</p>
+      <p class="empty-text">Open a YouTube video up to 20 minutes long and click <b>Take Notes</b> in the player.</p>
     </div>
   </main>
 
   <footer class="foot">
     <span id="server" class="server"></span>
-    <a href="options.html" target="_blank" class="link">Settings</a>
+    <nav class="foot-links">
+      <a href="history.html" target="_blank" class="pill ghost small">History</a>
+      <a href="options.html" target="_blank" class="pill ghost small">Settings</a>
+    </nav>
   </footer>
 
   <template id="job-tpl">
     <li class="job">
       <div class="job-head">
-        <img class="thumb" alt="" />
+        <div class="thumb-wrap">
+          <img class="thumb" alt="" />
+          <div class="resume" hidden><div class="resume-fill"></div></div>
+          <span class="badge"></span>
+        </div>
         <div class="job-meta">
           <p class="job-title"></p>
-          <p class="job-status"><span class="dot"></span><span class="status-text"></span></p>
+          <p class="job-status"></p>
+          <p class="detail"></p>
         </div>
       </div>
-      <ol class="steps"></ol>
-      <div class="bar"><div class="bar-fill"></div></div>
-      <p class="detail"></p>
+      <ol class="chapters" aria-label="Progress"></ol>
       <ul class="warnings"></ul>
       <div class="actions"></div>
     </li>

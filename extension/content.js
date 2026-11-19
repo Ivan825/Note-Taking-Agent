@@ -9,28 +9,19 @@
   const currentVideoId = () =>
     location.pathname === "/watch" ? new URLSearchParams(location.search).get("v") : null;
 
-  // YouTube enforces Trusted Types, so build the icon with DOM APIs (no innerHTML).
-  function icon() {
+  // YouTube enforces Trusted Types, so icons are built with DOM APIs (no innerHTML).
+  const PATHS = {
+    note: "M13 11h-2v3H8v2h3v3h2v-3h3v-2h-3zm1-9H6c-1.1 0-2 .9-2 2v16c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z",
+    ok: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+    error: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z",
+  };
+  function icon(name) {
     const svg = document.createElementNS(SVG_NS, "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("width", "18");
-    svg.setAttribute("height", "18");
     svg.setAttribute("aria-hidden", "true");
-    const paths = [
-      "M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z",
-      "M14 2v6h6",
-      "M8 13h8M8 17h5",
-    ];
-    for (const d of paths) {
-      const p = document.createElementNS(SVG_NS, "path");
-      p.setAttribute("d", d);
-      p.setAttribute("fill", "none");
-      p.setAttribute("stroke", "currentColor");
-      p.setAttribute("stroke-width", "2");
-      p.setAttribute("stroke-linecap", "round");
-      p.setAttribute("stroke-linejoin", "round");
-      svg.appendChild(p);
-    }
+    const p = document.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", PATHS[name]);
+    svg.appendChild(p);
     return svg;
   }
 
@@ -43,26 +34,28 @@
     return { video_id: id, url: `https://www.youtube.com/watch?v=${id}`, duration_sec: duration, title };
   }
 
+  // YouTube-style snackbar, bottom-left; inside the player while it is fullscreen.
   function toast(kind, title, detail) {
-    const player = document.querySelector("#movie_player") || document.body;
+    const host = document.fullscreenElement || document.body;
     let el = document.getElementById(TOAST_ID);
     if (!el) {
       el = document.createElement("div");
       el.id = TOAST_ID;
       el.setAttribute("role", "status");
     }
-    if (el.parentElement !== player) player.appendChild(el);
+    if (el.parentElement !== host) host.appendChild(el);
     el.className = `vnt-toast vnt-${kind}`;
-    el.replaceChildren();
+    const text = document.createElement("div");
     const t = document.createElement("strong");
     t.textContent = title;
-    el.appendChild(t);
+    text.appendChild(t);
     if (detail) {
       const d = document.createElement("span");
       d.textContent = detail;
-      el.appendChild(d);
+      text.appendChild(d);
     }
-    el.classList.add("vnt-show");
+    el.replaceChildren(icon(kind === "error" ? "error" : "ok"), text);
+    requestAnimationFrame(() => el.classList.add("vnt-show"));
     clearTimeout(el._hide);
     el._hide = setTimeout(() => el.classList.remove("vnt-show"), kind === "error" ? 7000 : 4500);
   }
@@ -107,7 +100,7 @@
     btn.type = "button";
     btn.title = "Take notes on this video (Video Note Taker)";
     btn.setAttribute("aria-label", "Take notes on this video");
-    btn.appendChild(icon());
+    btn.appendChild(icon("note"));
     const label = document.createElement("span");
     label.className = "vnt-label";
     label.textContent = "Take Notes";

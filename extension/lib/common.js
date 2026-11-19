@@ -98,6 +98,7 @@ const ERROR_TEXT = {
   OAUTH_NOT_CONFIGURED: ["Notion not configured", "The server is missing its Notion OAuth credentials."],
   OAUTH_EXCHANGE_FAILED: ["Notion sign-in failed", null],
   OAUTH_CANCELLED: ["Notion sign-in cancelled", "Click Take Notes again to connect Notion."],
+  CANCELLED: ["Cancelled", "You cancelled this job before it started."],
 };
 
 export function friendlyError(error) {
@@ -107,6 +108,37 @@ export function friendlyError(error) {
     title: title || "Something went wrong",
     detail: detail || error.message || "",
   };
+}
+
+export const thumbUrl = (videoId) => `https://i.ytimg.com/vi/${encodeURIComponent(videoId || "")}/mqdefault.jpg`;
+
+// One line of status for a job card/row: {cls, icon, text}. Icons are names from lib/icons.js.
+export function describeJob(job) {
+  switch (job.status) {
+    case "COMPLETED":
+      return { cls: "ok", icon: "check", text: "Notes published" };
+    case "COMPLETED_WITH_WARNINGS":
+      return { cls: "warn", icon: "warning", text: "Published with warnings" };
+    case "FAILED":
+      return { cls: "err", icon: "error", text: friendlyError(job.error).title };
+    case "DEAD_LETTERED":
+      return { cls: "err", icon: "error", text: "Stopped after repeated failures" };
+  }
+  const stage = STAGES[stageIndex(job.status)].label;
+  if (job.next_retry_at) {
+    const secs = Math.max(0, Math.round((Date.parse(job.next_retry_at) - Date.now()) / 1000));
+    return { cls: "waiting active", icon: "schedule", text: `${stage} · retrying ${secs > 0 ? `in ${secs}s` : "now"}` };
+  }
+  if (job.status === "QUEUED") return { cls: "active", icon: null, text: "Queued" };
+  return { cls: "active", icon: null, text: `${stage} · ${job.progress || 0}%` };
+}
+
+// Deterministic avatar colour for a workspace name (YouTube-style letter avatars).
+export function avatarColor(name) {
+  const palette = ["#5c6bc0", "#00897b", "#7e57c2", "#ef6c00", "#c2185b", "#0288d1", "#689f38"];
+  let h = 0;
+  for (const ch of name || "") h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return palette[h % palette.length];
 }
 
 export function needsReconnect(error) {

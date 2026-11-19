@@ -6,7 +6,7 @@
   "description": "Turn any YouTube video into structured study notes with real frames, published to Notion.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstfLicw0IReUUzUFn7PGNMX7mFbdVV2mdTsBq1p4X0evVot+KxI3AFaE9LEYJHdgYH61D7lo1zc23cUCdufOOXsQ7VpOYRwGW9Aty5oe3PaqQh016TAW7yfTLSciSurPjcrAsQpdV8CJCUnxxvRpx5Um0cGFkAiQ3EEhQKuFY8IF7DHjU0Z8PMTZ4OUOP3tY//ku2K2dsOs0OrNMraQv7aml2ZC7LBHmRsJPwaUOQmw2Ll6pNBheDNMNr+P9OYjQ0jpd1mSUeY/VaBVs8v4M2Ij64tl2XLOXatXvq8XK1SItUOn7hDJ9HtUt2SjyG/vJGKh9D8ODSBhTMjOtk4QlgwIDAQAB",
   "minimum_chrome_version": "116",
-  "permissions": ["identity", "storage", "alarms", "activeTab"],
+  "permissions": ["identity", "storage", "alarms", "activeTab", "notifications"],
   "host_permissions": [
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",

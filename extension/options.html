@@ -2,39 +2,81 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Video Note Taker — Settings</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Video Note Taker</title>
   <link rel="stylesheet" href="popup.css" />
-  <style>
-    body { width: auto; max-width: 560px; max-height: none; margin: 32px auto; padding: 0 16px; display: block; }
-    .card { border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-top: 16px; }
-    label { display: block; font-weight: 600; margin-bottom: 6px; }
-    input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
-    .row { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
-    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
-    #status { font-size: 12.5px; }
-  </style>
 </head>
-<body>
-  <header style="display:flex;gap:10px;align-items:center">
-    <img src="icons/icon48.png" alt="" width="36" height="36" style="border-radius:8px" />
-    <h1 style="font-size:18px">Video Note Taker — Settings</h1>
+<body class="page">
+  <header class="masthead">
+    <img src="icons/icon48.png" alt="" class="logo" />
+    <span class="wordmark">Video Note Taker</span>
+    <nav>
+      <a href="history.html" class="pill ghost small">History</a>
+      <a href="options.html" class="pill ghost small" aria-current="page">Settings</a>
+    </nav>
   </header>
 
-  <section class="card">
-    <label for="gateway">Server URL</label>
-    <input id="gateway" type="url" placeholder="http://localhost:8000" />
-    <p class="hint">Base URL of the note-taking API gateway (see the project README).</p>
-    <div class="row">
-      <button id="save" class="btn primary" type="button">Save</button>
-      <button id="test" class="btn secondary" type="button">Test connection</button>
-      <span id="status"></span>
-    </div>
-  </section>
+  <main class="settings">
+    <h1 class="page-title">Settings</h1>
 
-  <section class="card">
-    <label>Notion</label>
-    <p id="notion" class="hint">Checking…</p>
-  </section>
+    <section class="section" aria-labelledby="notion-h">
+      <h2 id="notion-h">Notion</h2>
+      <p class="section-desc">Where your notes are published.</p>
+
+      <div class="setting">
+        <div class="setting-label">Workspace</div>
+        <div>
+          <div class="identity">
+            <span id="avatar" class="avatar large" aria-hidden="true"></span>
+            <div class="identity-text">
+              <p id="notion-name" class="identity-name">Checking…</p>
+              <p id="notion-sub" class="hint" style="margin-top:0"></p>
+            </div>
+            <button id="disconnect" class="pill tonal" type="button" hidden>Disconnect</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="setting" id="dest-row" hidden>
+        <div class="setting-label">Destination page</div>
+        <div>
+          <div class="dest-current">
+            <span id="dest-icon" class="page-ico"></span>
+            <span id="dest-title"></span>
+            <span id="dest-tag" class="tag">Default</span>
+          </div>
+          <p class="hint">New notes are created as sub-pages of this page.</p>
+          <form id="dest-form" class="field-row" role="search">
+            <input id="dest-q" class="field" type="search" placeholder="Search pages shared with Video Note Taker"
+                   aria-label="Search Notion pages" />
+            <button class="pill tonal" type="submit">Search</button>
+          </form>
+          <ul id="dest-results" class="results" aria-label="Notion pages"></ul>
+          <div class="field-row">
+            <button id="dest-reset" class="pill ghost" type="button">Use default (Video Notes)</button>
+            <span id="dest-status" class="status" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="server-h">
+      <h2 id="server-h">Server</h2>
+      <p class="section-desc">The note-taking gateway this extension talks to.</p>
+      <div class="setting">
+        <label class="setting-label" for="gateway">Server URL</label>
+        <div>
+          <input id="gateway" class="field" type="url" placeholder="http://localhost:8000" />
+          <p class="hint">Base URL of the API gateway (see the project README).</p>
+          <div class="field-row">
+            <button id="save" class="pill primary" type="button">Save</button>
+            <button id="test" class="pill tonal" type="button">Test connection</button>
+            <span id="status" class="status" role="status"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <script type="module" src="options.js"></script>
 </body>

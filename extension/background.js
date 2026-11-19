@@ -1,8 +1,10 @@
 // Background service worker: one-time Notion OAuth, job submission, status polling.
-import { api, ApiError, TERMINAL } from "./lib/common.js";
+import { api, ApiError, TERMINAL, friendlyError } from "./lib/common.js";
 
-const MAX_JOBS = 25;
+const MAX_JOBS = 100;
 const POLL_ALARM = "vnt-poll";
+const FLASH_MS = 10000;
+let badgeFlash = null; // {text, color, until}: shown briefly after a job finishes
 
 // ------------------------------------------------------------------ storage helpers
 async function getNotion() {
@@ -21,10 +23,47 @@ async function saveJobs(jobs) {
 }
 
 async function updateBadge(jobs) {
+  if (badgeFlash && Date.now() < badgeFlash.until) {
+    await chrome.action.setBadgeBackgroundColor({ color: badgeFlash.color });
+    await chrome.action.setBadgeText({ text: badgeFlash.text });
+    return;
+  }
   const active = jobs.filter((j) => !TERMINAL.has(j.status)).length;
-  await chrome.action.setBadgeBackgroundColor({ color: "#6366f1" });
+  await chrome.action.setBadgeBackgroundColor({ color: "#2563eb" });
   await chrome.action.setBadgeText({ text: active ? String(active) : "" });
 }
+
+// Green ✓ (or red ! if any failed) for ~10s, then back to the active count.
+// ponytail: setTimeout dies with the service worker; the next poll/save restores the badge anyway.
+function flashBadge(finished) {
+  const failed = finished.some((j) => j.status === "FAILED" || j.status === "DEAD_LETTERED");
+  badgeFlash = failed ? { text: "!", color: "#dc2626" } : { text: "✓", color: "#16a34a" };
+  badgeFlash.until = Date.now() + FLASH_MS;
+  setTimeout(async () => updateBadge(await getJobs()), FLASH_MS + 50);
+}
+
+function notifyFinished(job) {
+  const outcome = {
+    COMPLETED: "Notes published to Notion.",
+    COMPLETED_WITH_WARNINGS: "Notes published, but some frames were left out.",
+    FAILED: `Failed: ${friendlyError(job.error).title}.`,
+    DEAD_LETTERED: "Stopped after repeated failures.",
+  }[job.status];
+  chrome.notifications.create(`job:${job.job_id}`, {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: job.video_title || job.video_id || "Video Note Taker",
+    message: outcome || job.status,
+  });
+}
+
+chrome.notifications.onClicked.addListener(async (id) => {
+  if (!id.startsWith("job:")) return;
+  const job = (await getJobs()).find((j) => j.job_id === id.slice(4));
+  const url = job && job.result && job.result.notion_page_url;
+  if (url) chrome.tabs.create({ url });
+  chrome.notifications.clear(id);
+});
 
 // ------------------------------------------------------------------ Notion OAuth (one time)
 async function connectNotion(interactive = true) {
@@ -60,15 +99,23 @@ async function connectNotion(interactive = true) {
 }
 
 function publicNotion(n) {
-  return n ? { workspace_name: n.workspace_name, workspace_icon: n.workspace_icon, connected_at: n.connected_at } : null;
+  if (!n) return null;
+  return {
+    workspace_name: n.workspace_name,
+    workspace_icon: n.workspace_icon,
+    connected_at: n.connected_at,
+    // Page picked in Settings; null = the default "Video Notes" page.
+    destination: n.default_parent_title ? { title: n.default_parent_title, icon: n.default_parent_icon || null } : null,
+  };
+}
+
+async function ensureNotion() {
+  return (await getNotion()) || (await connectNotion(true), await getNotion());
 }
 
 // ------------------------------------------------------------------ jobs
 async function submitJob(video) {
-  let notion = await getNotion();
-  if (!notion) await connectNotion(true);
-  notion = await getNotion();
-
+  const notion = await ensureNotion();
   const res = await api("/jobs", {
     method: "POST",
     body: {
@@ -79,10 +126,14 @@ async function submitJob(video) {
       video_title: video.title || undefined,
     },
   });
+  return addJob(res, video.title);
+}
+
+async function addJob(res, title) {
   const job = {
     job_id: res.job_id,
     video_id: res.video_id,
-    video_title: video.title || res.video_id,
+    video_title: title || res.video_id,
     status: res.status,
     progress: 0,
     status_detail: "Waiting for a free worker",
@@ -94,8 +145,44 @@ async function submitJob(video) {
   return job;
 }
 
+// New job for the same video; the failed card stays as it was.
+async function retryJob(jobId) {
+  const notion = await ensureNotion();
+  const old = (await getJobs()).find((j) => j.job_id === jobId);
+  const res = await api(`/jobs/${jobId}/retry`, {
+    method: "POST",
+    body: { notion_token: notion.access_token, notion_parent_id: notion.default_parent_id || undefined },
+  });
+  return addJob(res, old && old.video_title);
+}
+
+async function cancelJob(jobId) {
+  const s = await api(`/jobs/${jobId}`, { method: "DELETE" });
+  const jobs = await getJobs();
+  await saveJobs(jobs.map((j) => (j.job_id === jobId ? { ...j, ...s, video_title: s.video_title || j.video_title } : j)));
+  return s;
+}
+
+async function searchNotionPages(query) {
+  const notion = await getNotion();
+  if (!notion) throw new ApiError("MISSING_NOTION_TOKEN", "Connect Notion first.");
+  return api("/notion/pages/search", { method: "POST", body: { notion_token: notion.access_token, query } });
+}
+
+async function setNotionDestination(page) {
+  const notion = await getNotion();
+  if (!notion) throw new ApiError("MISSING_NOTION_TOKEN", "Connect Notion first.");
+  // null = reset: the worker then finds/creates the default "Video Notes" page itself.
+  notion.default_parent_id = page ? page.id : null;
+  notion.default_parent_title = page ? page.title : null;
+  notion.default_parent_icon = page ? page.icon || null : null;
+  await chrome.storage.local.set({ notion });
+  return publicNotion(notion);
+}
+
 async function pollJobs() {
   const jobs = await getJobs();
+  const wasActive = new Set(jobs.filter((j) => !TERMINAL.has(j.status)).map((j) => j.job_id));
   let changed = false;
   await Promise.all(
     jobs.map(async (j, i) => {
@@ -115,6 +202,9 @@ async function pollJobs() {
       }
     })
   );
+  const finished = jobs.filter((j) => wasActive.has(j.job_id) && TERMINAL.has(j.status));
+  finished.forEach(notifyFinished);
+  if (finished.length) flashBadge(finished);
   if (changed) await saveJobs(jobs);
   if (!jobs.some((j) => !TERMINAL.has(j.status))) chrome.alarms.clear(POLL_ALARM);
   return jobs;
@@ -144,6 +234,14 @@ async function handle(msg) {
     case "DISCONNECT_NOTION":
       await chrome.storage.local.remove("notion");
       return { ok: true };
+    case "RETRY_JOB":
+      return { ok: true, job: await retryJob(msg.job_id) };
+    case "CANCEL_JOB":
+      return { ok: true, job: await cancelJob(msg.job_id) };
+    case "SEARCH_NOTION_PAGES":
+      return { ok: true, pages: await searchNotionPages(msg.query || "") };
+    case "SET_NOTION_DESTINATION":
+      return { ok: true, notion: await setNotionDestination(msg.page || null) };
     case "GET_STATE": {
       const jobs = msg.refresh ? await pollJobs() : await getJobs();
       return { ok: true, jobs, notion: publicNotion(await getNotion()) };

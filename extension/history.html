@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Notes history · Video Note Taker</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body class="page">
+  <header class="masthead">
+    <img src="icons/icon48.png" alt="" class="logo" />
+    <span class="wordmark">Video Note Taker</span>
+    <nav>
+      <a href="history.html" class="pill ghost small" aria-current="page">History</a>
+      <a href="options.html" class="pill ghost small">Settings</a>
+    </nav>
+  </header>
+
+  <div class="history">
+    <main>
+      <h1 class="page-title">Notes history</h1>
+      <div id="groups" aria-live="polite"></div>
+      <p id="empty" class="empty-list" hidden></p>
+    </main>
+
+    <aside class="tools" aria-label="Filter history">
+      <label class="search">
+        <span id="search-icon"></span>
+        <input id="q" type="search" placeholder="Search notes history" aria-label="Search notes history by title" />
+      </label>
+      <div class="chips" role="group" aria-label="Status">
+        <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+        <button class="chip" type="button" data-filter="done" aria-pressed="false">Done</button>
+        <button class="chip" type="button" data-filter="warn" aria-pressed="false">Warnings</button>
+        <button class="chip" type="button" data-filter="failed" aria-pressed="false">Failed</button>
+      </div>
+      <button id="clear" class="pill ghost" type="button">Clear finished jobs</button>
+    </aside>
+  </div>
+
+  <script type="module" src="history.js"></script>
+</body>
+</html>
