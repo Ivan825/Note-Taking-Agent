@@ -3,7 +3,7 @@
 Click **Take Notes** on any YouTube video (up to 20 minutes). A few minutes later a Notion page
 appears with structured study notes and **real frames from the video**: diagrams and slides
 captured at the moments that matter, each with a caption explaining what it shows and why it
-was picked.
+was picked. Videos without captions work too: their audio is transcribed locally with Whisper.
 
 ```
 Chrome extension ──▶ API gateway ──▶ RabbitMQ ──▶ worker × N ──▶ YouTube · Claude · Notion
@@ -83,6 +83,10 @@ callers can pass any page id, or a database id, as `notion_parent_id`.
 | `MAX_ATTEMPTS` | `5` | **Retry budget**: attempts before a job is `DEAD_LETTERED` |
 | `BACKOFF_SECONDS` | `10,30,90,90` | **Backoff schedule**: delay before retry 1, 2, …; the last value repeats |
 | `YOUTUBE_RPS` | `1` | Global YouTube requests/second |
+| `ASR_FALLBACK` | `true` | For videos **without captions**, download the audio and transcribe it locally with Whisper |
+| `WHISPER_MODEL` | `base` | Whisper model (`tiny` / `base` / `small`). `base` is built into the worker image |
+| `WHISPER_THREADS` | `4` | CPU threads per Whisper transcription |
+| `YOUTUBE_COOKIES_FILE` | `/run/cookies/youtube.txt` | Optional `cookies.txt` (put it in `./cookies/`) if YouTube starts bot-checking your IP |
 | `MAX_VIDEO_SECONDS` | `1200` | Constraint A: the 20-minute cap |
 | `FRAME_TIMEOUT_SECONDS` | `60` | Timeout for one ffmpeg frame capture |
 | `ENABLE_DEBUG_ENDPOINTS` | `true` | Exposes `POST /debug/chaos` for fault injection during the demo |
@@ -124,6 +128,7 @@ they happen.
 | **Dead-letter queue** | `make dlq` submits an unavailable video | It retries after 10s, 30s, 90s and 90s, then goes to `DEAD_LETTERED` (about 3.7 minutes). The message is visible in `jobs.dlq` in the RabbitMQ UI. Lower `BACKOFF_SECONDS`/`MAX_ATTEMPTS` for a faster demo. |
 | **Scaling** | `make scale WORKERS=4` (= `docker compose up -d --scale worker=4`) | `/healthz` reports 4 consumers. Jobs spread across them. |
 | **Burst** | Click **Take Notes** on several videos in a row, or `NOTION_TOKEN=… make burst` | Every job gets its own card. The shared Redis token bucket paces the Claude calls, so the queue drains without a single 429 from Claude. |
+| **No captions** | Click **Take Notes** on a video with captions disabled. To force it on any video: `curl -XPOST localhost:8000/debug/chaos -H 'content-type: application/json' -d '{"no_captions":true}'` | The status reads *"No captions: transcribing the audio (3:10 of 10:17)"*. The audio is transcribed by Whisper, then the normal pipeline continues. The Notion page notes that the transcript came from speech recognition. A video with no speech at all ends as `FAILED / NO_SPEECH`. |
 | **Too long** | Open a video over 20 minutes and click **Take Notes** | It's rejected immediately and no job runs. If a client skips the duration hint, the worker rejects it with `FAILED / VIDEO_TOO_LONG` before doing any work. |
 
 ---
@@ -150,6 +155,9 @@ they happen.
   images (Constraint B).
 * **Transcripts:** `youtube-transcript-api`, preferring English and translating otherwise. Duration
   and metadata come from `yt-dlp`, which needs Deno (bundled in the worker image).
+  **Videos without captions** fall back to local speech-to-text: `yt-dlp` downloads only the audio,
+  ffmpeg decodes it, and `faster-whisper` (CPU, int8, with voice-activity detection) transcribes it at
+  about 9× real time. This adds no extra external API, key or rate limit.
 * **Frames:** `ffmpeg -ss T -i <≤720p stream URL from yt-dlp> -frames:v 1` grabs one real frame
   straight from the stream, with no download. A failed frame is retried with a fresh stream URL,
   and a blank transition frame is nudged forward 3 seconds.
@@ -203,6 +211,22 @@ they happen.
 
 ---
 
+## Measured results (local run, Apple Silicon, Docker Desktop, 2–3 workers)
+
+| Check | Result |
+|---|---|
+| 18:40 video (*But what is a neural network?*) end to end | **46.8 s** from submit to published page. 6/6 real frames, each re-captioned from its pixels |
+| 10:17 video **without captions** (speech-to-text path) | **133 s** (about 75 s of it is Whisper). 6/6 frames |
+| 429 from YouTube, then Claude, then Notion on one job | Waited 10 s, 30 s and 90 s ("Rate-limited by …, retrying in Ns"), then `COMPLETED` |
+| `SIGKILL` of the worker during `EXTRACTING_FRAMES` | Another worker resumed within about 1 s and finished 23 s later. `recoveries: 1`, exactly one Notion page |
+| 2 of 6 frames forced to fail | `COMPLETED_WITH_WARNINGS`, 4 frames published, 2 `FRAME_EXTRACTION_FAILED` warnings |
+| Every frame forced to fail | `COMPLETED_WITH_WARNINGS`, text-only page published |
+| Unavailable video | Retries at 10 s, 30 s, 90 s, 90 s, then `DEAD_LETTERED` after about 224 s; the message is in `jobs.dlq` |
+| Burst of 5 videos through the extension, 3 workers | All `COMPLETED` on attempt 1 (107–162 s each). **0 Claude 429s**, with the shared token bucket pacing calls |
+| 4h26m video | Blocked in the extension. Without the duration hint, the worker returns `FAILED / VIDEO_TOO_LONG` before doing any work |
+
+---
+
 ## Repository layout
 
 ```
@@ -230,5 +254,8 @@ make down          # stop (keeps data); make clean also removes volumes
   isn't on `localhost:8000`, change the URL in the extension's Settings.
 * **Jobs keep retrying with "YouTube asked for a sign-in check".** YouTube is rate-limiting your IP.
   Wait a few minutes, or use a different network.
+* **YouTube keeps bot-checking.** Export a Netscape-format `cookies.txt` from a logged-in YouTube
+  session (any "Get cookies.txt" browser extension works), save it as `./cookies/youtube.txt`, and
+  restart the workers.
 * **"Notion page not shared".** Reconnect Notion from the popup's chip, and keep the "Video Notes"
   page (or the page you chose) shared with the connection.
