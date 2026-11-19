@@ -90,7 +90,7 @@ function stepsNode(job) {
     let label = s.label;
     if (failed) {
       if (i < failedAt) { li.classList.add("done"); mark.textContent = "✓"; }
-      else if (i === failedAt) { li.classList.add("failed", "current"); mark.textContent = "!"; }
+      else if (i === failedAt) { li.classList.add("failed", "is-current"); mark.textContent = "!"; }
     } else if (TERMINAL.has(job.status)) {
       li.classList.add("done");
       mark.textContent = "✓";
@@ -102,7 +102,7 @@ function stepsNode(job) {
       li.classList.add("done");
       mark.textContent = "✓";
     } else if (i === idx) {
-      li.classList.add("current");
+      li.classList.add("is-current");
     }
     li.appendChild(mark);
     li.appendChild(el("span", null, label));
