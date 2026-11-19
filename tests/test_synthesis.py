@@ -1,4 +1,11 @@
-from worker.stages.synthesize import chunk_lines, clean_key_frames, merge_chunks, render, transcript_lines
+from worker.stages.synthesize import (
+    chunk_lines,
+    clean_key_frames,
+    ensure_section_frames,
+    merge_chunks,
+    render,
+    transcript_lines,
+)
 
 
 def segs(n, step=5.0, text="word " * 20):
@@ -52,3 +59,14 @@ def test_clean_key_frames_clamps_dedupes_caps():
     assert ts == sorted(ts)
     assert all(0 <= t <= 999 for t in ts)
     assert all(f["caption"] and f["reason"] for f in out)
+
+
+def test_every_section_gets_a_frame():
+    secs = [{"heading": "A", "start_sec": 0}, {"heading": "B", "start_sec": 100}, {"heading": "C", "start_sec": 200}]
+    have = [{"timestamp_sec": 120.0, "caption": "c", "reason": "r"}]
+    out = ensure_section_frames(secs, have, duration=300)
+    assert [f["timestamp_sec"] for f in out] == [5.0, 120.0, 205.0]  # B already had one
+    assert all(any(s["start_sec"] <= f["timestamp_sec"] < (secs[i + 1]["start_sec"] if i < 2 else 1e9) for f in out)
+               for i, s in enumerate(secs))
+    # clamped inside a very short last section and inside the video
+    assert ensure_section_frames([{"heading": "Z", "start_sec": 299.5}], [], duration=300)[0]["timestamp_sec"] <= 299.0

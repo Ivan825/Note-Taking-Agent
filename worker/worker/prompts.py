@@ -89,7 +89,8 @@ Produce:
      {start}-{end}.
    - caption: one sentence describing what the frame shows.
    - reason: one sentence explaining why this visual matters for understanding the material.
-   Spread them across the video and avoid moments where only the speaker is likely to be on screen.
+   Give every section at least one frame, spread across the whole video, and avoid
+   moments where only the speaker is likely to be on screen.
 3. overview - a 2-3 sentence summary.
 4. takeaways - the 3-5 most important things to remember.
 
@@ -121,6 +122,7 @@ Narration around this moment:
 Write the final caption that will be shown under this image in the study notes:
 - caption: one sentence describing exactly what is visible in THIS frame (text, diagram, chart, code...).
   Describe only what you can actually see.
-- reason: one sentence on why this visual matters, grounded in the narration.
+- reason: one sentence on why this visual matters, grounded in the narration. Write it for the reader of
+  the notes: never mention the proposed caption, that a caption was "flagged", or any mismatch with it.
 - shows_expected_visual: false if the frame does not show meaningful visual content (e.g. only the
   speaker, a blank or transition screen), true otherwise."""

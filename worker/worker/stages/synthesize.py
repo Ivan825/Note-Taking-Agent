@@ -73,6 +73,28 @@ def clean_key_frames(frames: list[dict], duration: float, max_frames: int, min_g
     return cleaned
 
 
+def ensure_section_frames(sections: list[dict], frames: list[dict], duration: float, offset: float = 5.0) -> list[dict]:
+    """Every section gets at least one frame: where Claude flagged none, capture one shortly after the section
+    starts. The real frame is re-captioned from its pixels later; this text is only a provisional caption."""
+    end = max(0.0, duration - 1.0) if duration else float("inf")
+    ordered = sorted(sections, key=lambda s: s["start_sec"])
+    out = list(frames)
+    for i, sec in enumerate(ordered):
+        start = sec["start_sec"]
+        stop = ordered[i + 1]["start_sec"] if i + 1 < len(ordered) else float("inf")
+        if any(start <= f["timestamp_sec"] < stop for f in out):
+            continue
+        ts = min(start + offset, stop - 1.0, end)
+        if ts < start:  # section shorter than a second
+            ts = min(start, end)
+        out.append({
+            "timestamp_sec": round(max(0.0, ts), 1),
+            "caption": f"Video frame from the section \"{sec['heading']}\"",
+            "reason": f"Shows what is on screen while this section is explained: {sec['heading']}.",
+        })
+    return sorted(out, key=lambda f: f["timestamp_sec"])
+
+
 def merge_chunks(parts: list[dict]) -> dict:
     sections: list[dict] = []
     key_frames: list[dict] = []
@@ -137,19 +159,24 @@ def run(job_id: uuid.UUID) -> dict:
         )
         overview, takeaways = combined["overview"], combined["takeaways"]
 
+    sections = [
+        {
+            "heading": sec["heading"].strip(),
+            "start_sec": max(0.0, min(float(sec.get("start_sec") or 0), duration or float("inf"))),
+            "bullets": [b.strip() for b in sec.get("bullets", []) if b.strip()],
+        }
+        for sec in merged["sections"]
+        if sec.get("heading")
+    ]
+    key_frames = ensure_section_frames(
+        sections, clean_key_frames(merged["key_frames"], duration, s.llm_max_frames), duration
+    )
+
     synthesis = {
         "overview": overview.strip(),
         "takeaways": [t.strip() for t in takeaways if t.strip()],
-        "sections": [
-            {
-                "heading": sec["heading"].strip(),
-                "start_sec": max(0.0, min(float(sec.get("start_sec") or 0), duration or float("inf"))),
-                "bullets": [b.strip() for b in sec.get("bullets", []) if b.strip()],
-            }
-            for sec in merged["sections"]
-            if sec.get("heading")
-        ],
-        "key_frames": clean_key_frames(merged["key_frames"], duration, s.llm_max_frames),
+        "sections": sections,
+        "key_frames": key_frames,
         "chunks": len(chunks),
     }
     jobstore.put_artifact(job_id, "synthesis", synthesis)
