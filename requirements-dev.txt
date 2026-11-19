@@ -1,0 +1,4 @@
+-e ./common
+-r gateway/requirements.txt
+-r worker/requirements.txt
+pytest==9.2.0
