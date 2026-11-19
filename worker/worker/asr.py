@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 import subprocess
 import threading
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-import numpy as np
+if TYPE_CHECKING:  # numpy comes with faster-whisper; imported lazily so unit tests stay light
+    import numpy as np
 
 from notes_common.config import get_settings
 from notes_common.errors import PermanentError, TransientError
@@ -40,8 +41,10 @@ def _get_model():
 SAMPLE_RATE = 16000
 
 
-def load_audio(path: str) -> np.ndarray:
+def load_audio(path: str) -> "np.ndarray":
     """Decode any audio file to 16 kHz mono float32 with ffmpeg (no PyAV dependency)."""
+    import numpy as np
+
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", path,
            "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"]
     try:
